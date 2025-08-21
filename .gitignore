@@ -1,0 +1,15 @@
+cat > .gitignore << 'EOF'
+# venv
+.venv/
+# Python
+__pycache__/
+*.pyc
+# Env & secrets
+.env
+# Jupyter
+.ipynb_checkpoints/
+# Data & artifacts
+data/
+*.log
+# Editors
+.vscode/
