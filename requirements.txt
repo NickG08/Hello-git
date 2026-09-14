@@ -2,3 +2,15 @@ black
 ruff
 pytest
 python-dotenv
+
+# KZ Bond Monitor
+streamlit>=1.38
+pandas>=2.0
+numpy
+scipy
+aiohttp
+requests
+python-dateutil
+holidays
+SQLAlchemy>=2.0
+altair>=5.0

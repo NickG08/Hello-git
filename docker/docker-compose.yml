@@ -1,0 +1,26 @@
+services:
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8501:8501"
+    env_file:
+      - ../.env
+    volumes:
+      - kzbonds_data:/app/data
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    command: ["python", "docker/scheduler_loop.py"]
+    env_file:
+      - ../.env
+    volumes:
+      - kzbonds_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  kzbonds_data:

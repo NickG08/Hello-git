@@ -1,0 +1,14 @@
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# Keep to correctness/style basics (pyflakes, pycodestyle, import order,
+# pyupgrade). The scraper modules under kzbonds/sources/ deliberately use
+# broad `except Exception` around third-party, undocumented HTTP calls -
+# that's an intentional resilience choice, not an oversight, so the
+# stricter opinionated rule sets (flake8-bandit, flake8-blind-except,
+# flake8-datetimez, flake8-executable, ...) are left off rather than
+# suppressed line-by-line.
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
