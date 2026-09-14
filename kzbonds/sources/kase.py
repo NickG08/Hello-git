@@ -159,21 +159,27 @@ def _format_trading_regime(boards_en) -> str:
 
 
 def _get_all_bonds() -> list[dict]:
+    # requests.Response.json() re-parses the body into fresh objects on every
+    # call - each category's response must be parsed exactly once into a
+    # variable before tagging, or the "_bond_type" mutation lands on
+    # throwaway dicts and every bond silently ends up untagged.
     all_bonds = []
     try:
         r = requests.get(SECURITIES_URL, params=CORP_BONDS_PARAMS, timeout=30)
         r.raise_for_status()
-        for b in r.json():
+        corp_bonds = r.json()
+        for b in corp_bonds:
             b["_bond_type"] = "corp"
-        all_bonds.extend(r.json())
+        all_bonds.extend(corp_bonds)
     except Exception:
         pass
     try:
         r = requests.get(SECURITIES_URL, params=GSEC_PARAMS, timeout=30)
         r.raise_for_status()
-        for b in r.json():
+        gsec_bonds = r.json()
+        for b in gsec_bonds:
             b["_bond_type"] = "gsec"
-        all_bonds.extend(r.json())
+        all_bonds.extend(gsec_bonds)
     except Exception:
         pass
     return all_bonds
