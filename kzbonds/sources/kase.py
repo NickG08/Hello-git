@@ -96,7 +96,7 @@ async def _fetch_all_characteristics(bonds: list[dict]) -> dict:
 
     if to_fetch:
         semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_REQUESTS)
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(trust_env=True) as session:
             tasks = [
                 _fetch_characteristics_one(session, t, bt, semaphore)
                 for t, bt in to_fetch
@@ -133,7 +133,7 @@ async def _fetch_all_boards(bonds: list[dict]) -> dict:
     (unlike characteristics) it is never cached to disk.
     """
     semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_REQUESTS)
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(trust_env=True) as session:
         tasks = [
             _fetch_boards_one(
                 session, b.get("code"), b.get("_bond_type", "corp"), semaphore
@@ -338,7 +338,7 @@ def _calculate_ytm_irr(
     basis,
     face_value=100,
 ):
-    if not clean_price or not coupon_rate or not maturity_date:
+    if not clean_price or not maturity_date:
         return None
     try:
         if isinstance(maturity_date, str):
@@ -349,7 +349,6 @@ def _calculate_ytm_irr(
             return None
 
         price = clean_price * face_value / 100
-        coupon_payment = (coupon_rate / frequency) * face_value / 100
 
         if basis in (360, "360"):
             days_to_maturity, year_days = (
@@ -363,6 +362,20 @@ def _calculate_ytm_irr(
             return None
 
         years_to_maturity = days_to_maturity / year_days
+
+        if not coupon_rate:
+            # Discount bond: no coupons, single redemption of face_value at
+            # maturity - closed-form bond-equivalent yield (same convention
+            # AIX's scraper already uses for its zero-coupon case).
+            if price <= 0:
+                return None
+            return round(
+                (2 * ((face_value / price) ** (1.0 / (2 * years_to_maturity)) - 1))
+                * 100,
+                4,
+            )
+
+        coupon_payment = (coupon_rate / frequency) * face_value / 100
         n_periods = int(years_to_maturity * frequency) + 1
         if n_periods <= 0:
             return None
@@ -394,7 +407,7 @@ def _calculate_macaulay_duration(
     basis,
     face_value=100,
 ):
-    if not clean_price or not coupon_rate or not maturity_date or not ytm:
+    if not clean_price or not maturity_date or not ytm:
         return None
     try:
         if isinstance(maturity_date, str):
@@ -404,7 +417,6 @@ def _calculate_macaulay_duration(
         if not maturity_date or not settlement_date or settlement_date >= maturity_date:
             return None
 
-        coupon_payment = (coupon_rate / frequency) * face_value / 100
         ytm_decimal = ytm / 100
 
         if basis in (360, "360"):
@@ -419,6 +431,13 @@ def _calculate_macaulay_duration(
             return None
 
         years_to_maturity = days_to_maturity / year_days
+
+        if not coupon_rate:
+            # Discount bond: the whole cash flow is the redemption at
+            # maturity, so Macaulay duration is just time to maturity.
+            return round(years_to_maturity, 4)
+
+        coupon_payment = (coupon_rate / frequency) * face_value / 100
         n_periods = int(years_to_maturity * frequency) + 1
         if n_periods <= 0:
             return None
@@ -519,6 +538,9 @@ def _process_bond(
     bond_type = ticker_data.get("typesec_ru")
     category = ticker_data.get("ticker_category", "")
     nbrk_view = ticker_data.get("nbrk_view_ru")
+    # Genuinely zero-coupon bonds (e.g. discount T-bills) report cupon=null
+    # by design - don't treat that as "coupon missing, go find it".
+    is_discount = ticker_data.get("typesec_en") == "discount"
 
     characteristics = all_characteristics.get(ticker, {})
     trading_regime = _format_trading_regime((all_boards or {}).get(ticker, {}))
@@ -554,7 +576,7 @@ def _process_bond(
             last_coupon_date = calc_prev
             last_coupon_date_str = calc_prev.isoformat()
 
-    if not coupon_rate:
+    if not coupon_rate and not is_discount:
         main_api_characteristics = _get_bond_main_api(ticker, bond_type_flag).get(
             "characteristics", {}
         )
@@ -563,10 +585,10 @@ def _process_bond(
             coupon_rate = coupon_from_desc
             quality_flags.append("coupon_from_description")
 
-    if not coupon_rate or not maturity_date:
+    if (not coupon_rate and not is_discount) or not maturity_date:
         html_data = _parse_bond_html_fallback(ticker)
         if html_data:
-            if not coupon_rate and "cupon" in html_data:
+            if not coupon_rate and not is_discount and "cupon" in html_data:
                 coupon_rate = html_data["cupon"]
                 quality_flags.append("html_fallback")
             if not maturity_date and "finish_date" in html_data:
@@ -578,7 +600,11 @@ def _process_bond(
     nkd_percent = _calculate_accrued_interest(
         coupon_rate, last_coupon_date, settlement_date, basis, frequency
     )
-    dirty_price = clean_price + nkd_percent if clean_price and nkd_percent else None
+    # Discount bonds accrue nothing (nkd_percent is None), so dirty == clean,
+    # same convention the AIX source uses.
+    dirty_price = (
+        clean_price + nkd_percent if clean_price and nkd_percent else clean_price
+    )
 
     ytm_calc_irr = _calculate_ytm_irr(
         clean_price, coupon_rate, settlement_date, maturity_date, frequency, basis
@@ -603,7 +629,7 @@ def _process_bond(
         quality_flags.append("not_currently_traded")
     if ytm_calc_irr is None and clean_price is not None:
         quality_flags.append("ytm_calc_failed")
-    if not coupon_rate:
+    if not coupon_rate and not is_discount:
         quality_flags.append("no_coupon_rate")
 
     return {

@@ -601,7 +601,9 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
     """Fetch, cache and normalize all AIX foreign-currency (non-KZT) bonds."""
     cache = _load_cache()
 
-    async with aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0"}) as session:
+    async with aiohttp.ClientSession(
+        headers={"User-Agent": "Mozilla/5.0"}, trust_env=True
+    ) as session:
         bonds_list = await _get_bonds_from_market(session)
         if not bonds_list:
             return pd.DataFrame()
