@@ -12,6 +12,8 @@ def _row(**overrides):
         "issuer": "Test Issuer",
         "instrument_type": "Купонная",
         "market_segment": "main_bonds",
+        "face_value": 100,
+        "face_currency": "USD",
         "clean_price": 99.5,
         "accrued_interest": 0.5,
         "dirty_price": 100.0,
@@ -75,3 +77,16 @@ def test_combine_with_empty_sources():
     assert combine(pd.DataFrame(), pd.DataFrame()).empty
     only_kase = combine(pd.DataFrame([_row()]), pd.DataFrame())
     assert len(only_kase) == 1
+
+
+def test_face_value_is_numeric_and_distinct_from_issue_volume():
+    df = normalize(pd.DataFrame([_row(face_value=1000, issue_volume=40_000_000)]))
+    assert df.iloc[0]["face_value"] == 1000
+    assert df.iloc[0]["issue_volume"] == 40_000_000
+
+
+def test_missing_face_value_defaults_to_null_not_issue_volume():
+    row = _row()
+    del row["face_value"]
+    df = normalize(pd.DataFrame([row]))
+    assert pd.isna(df.iloc[0]["face_value"])

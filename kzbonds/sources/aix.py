@@ -436,6 +436,19 @@ def _calculate_accrued_interest_pct(
         return 0.0
 
 
+def _extract_isin(profile: dict) -> str | None:
+    """Best-effort ISIN lookup: the original scraper never extracted ISIN at
+    all (it wasn't in the field list it read from /api/profile/{ticker}), so
+    it's unconfirmed whether the key is actually absent from the API or was
+    just never mapped. Tries the common key spellings; verify against a live
+    profile response and extend this if the real key differs."""
+    for key in ("isin", "ISIN", "Isin"):
+        val = profile.get(key)
+        if val:
+            return str(val).strip()
+    return None
+
+
 def _calibrate_conventions(
     profiles, coupon_details_map, aix_accrued_map, settlement_date
 ) -> dict:
@@ -702,6 +715,9 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
             else current_price
         )
 
+        face_value_val = _parse_float_safe(profile.get("faceValue"))
+        face_currency_val = profile.get("faceCurrency") or b["currency"]
+
         merged = {
             "face_value": profile.get("faceValue"),
             "reference_price": dirty_price,
@@ -739,11 +755,13 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
             {
                 "exchange": "AIX",
                 "ticker": b["ticker"],
-                "isin": None,
+                "isin": _extract_isin(profile),
                 "currency": b["currency"],
                 "issuer": merged["issuer"] or None,
                 "instrument_type": duration_result["bond_type"],
                 "market_segment": b["instrument_category"],
+                "face_value": face_value_val,
+                "face_currency": face_currency_val,
                 "clean_price": clean_price,
                 "accrued_interest": round(accrued, 4) if accrued else 0,
                 "dirty_price": dirty_price,
@@ -768,7 +786,10 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
                 "ytm_total_return_reported": None,
                 "macaulay_duration": duration_result["macaulay_duration"],
                 "modified_duration": duration_result["modified_duration"],
-                "issue_volume": _parse_float_safe(merged["face_value"]),
+                # Total issue size isn't exposed by this API (unlike KASE's
+                # volume_release) - leave unset rather than reusing face_value,
+                # which is the par value of one bond, not the issue total.
+                "issue_volume": None,
                 "_quality_flags": quality_flags,
             }
         )

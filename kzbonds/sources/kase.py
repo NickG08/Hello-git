@@ -524,6 +524,18 @@ def _process_bond(
     trading_regime = _format_trading_regime((all_boards or {}).get(ticker, {}))
     isin = _extract_characteristic_by_label(characteristics, "ISIN")
 
+    # KASE's characteristics API exposes a nominal-value label on at least
+    # some issues; label text unconfirmed against a live response, so this
+    # is a best-effort lookup with the same 100 fallback the YTM/duration
+    # math below already assumes (corp bonds are quoted per 100 of par).
+    face_value_raw = _extract_characteristic_by_label(characteristics, "Номинал")
+    try:
+        face_value = float(str(face_value_raw).replace(",", ".").replace(" ", ""))
+        if face_value <= 0:
+            face_value = 100.0
+    except (TypeError, ValueError):
+        face_value = 100.0
+
     last_coupon_date_str = _extract_characteristic_value(
         characteristics, "coupon_prev_date"
     )
@@ -602,6 +614,8 @@ def _process_bond(
         "issuer": emitter,
         "instrument_type": nbrk_view or bond_type,
         "market_segment": category or "unknown",
+        "face_value": face_value,
+        "face_currency": currency,
         "clean_price": round(clean_price, 4) if clean_price else None,
         "accrued_interest": nkd_percent,
         "dirty_price": round(dirty_price, 4) if dirty_price else None,

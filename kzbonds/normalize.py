@@ -31,6 +31,8 @@ UNIFIED_COLUMNS = [
     "currency",
     "instrument_type",
     "market_segment",
+    "face_value",
+    "face_currency",
     "clean_price",
     "accrued_interest",
     "dirty_price",
@@ -134,6 +136,7 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
 
     df["maturity_date"] = pd.to_datetime(df["maturity_date"], errors="coerce")
     for col in (
+        "face_value",
         "clean_price",
         "dirty_price",
         "accrued_interest",

@@ -191,6 +191,8 @@ with tab_table:
         "issuer",
         "currency",
         "instrument_type",
+        "face_value",
+        "face_currency",
         "clean_price",
         "dirty_price",
         "accrued_interest",
@@ -201,6 +203,7 @@ with tab_table:
         "ytm",
         "macaulay_duration",
         "modified_duration",
+        "issue_volume",
         "Качество",
         "price_quality_detail",
     ]
@@ -215,6 +218,8 @@ with tab_table:
             "issuer": "Эмитент",
             "currency": "Валюта",
             "instrument_type": "Тип",
+            "face_value": st.column_config.NumberColumn("Номинал", format="%.0f"),
+            "face_currency": "Вал. номинала",
             "clean_price": st.column_config.NumberColumn(
                 "Чистая цена, %", format="%.2f"
             ),
@@ -232,6 +237,11 @@ with tab_table:
             ),
             "modified_duration": st.column_config.NumberColumn(
                 "Мод. дюрация, лет", format="%.2f"
+            ),
+            "issue_volume": st.column_config.NumberColumn(
+                "Объём выпуска",
+                format="%.0f",
+                help="Не путать с номиналом одной бумаги",
             ),
             "price_quality_detail": "Детали качества",
         },
