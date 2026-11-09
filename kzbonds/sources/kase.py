@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
+import time
 from datetime import date, datetime
 
 import aiohttp
@@ -22,6 +24,8 @@ from dateutil.relativedelta import relativedelta
 from scipy.optimize import brentq
 
 from kzbonds import config
+
+logger = logging.getLogger(__name__)
 
 SECURITIES_URL = "https://kase.kz/api/instruments/securities/"
 BOND_CHARACTERISTICS_URL = (
@@ -67,22 +71,33 @@ def _save_cache(cache: dict) -> None:
         pass
 
 
-async def _fetch_characteristics_one(session, ticker, bond_type, semaphore):
-    async with semaphore:
+async def _get_json_with_retry(session, url, attempts=3, base_delay=0.6):
+    """A single transient failure (proxy hiccup) must not silently cost a
+    bond its ISIN/coupon data or wrongly flag a liquid bond as untraded -
+    retry a few times with backoff before giving up."""
+    for attempt in range(attempts):
         try:
-            url = (
-                GSEC_CHARACTERISTICS_URL
-                if bond_type == "gsec"
-                else BOND_CHARACTERISTICS_URL
-            ).format(ticker=ticker)
             async with session.get(
                 url, timeout=aiohttp.ClientTimeout(total=config.REQUEST_TIMEOUT)
             ) as resp:
                 if resp.status == 200:
-                    return ticker, await resp.json()
-                return ticker, {}
+                    return await resp.json()
+                return None
         except Exception:
-            return ticker, {}
+            if attempt < attempts - 1:
+                await asyncio.sleep(base_delay * (attempt + 1))
+    return None
+
+
+async def _fetch_characteristics_one(session, ticker, bond_type, semaphore):
+    async with semaphore:
+        url = (
+            GSEC_CHARACTERISTICS_URL
+            if bond_type == "gsec"
+            else BOND_CHARACTERISTICS_URL
+        ).format(ticker=ticker)
+        data = await _get_json_with_retry(session, url)
+        return ticker, (data or {})
 
 
 async def _fetch_all_characteristics(bonds: list[dict]) -> dict:
@@ -103,10 +118,20 @@ async def _fetch_all_characteristics(bonds: list[dict]) -> dict:
             ]
             results = await asyncio.gather(*tasks)
         cache.setdefault("characteristics", {})
+        failed = []
         for ticker, data in results:
             if data:
                 cache["characteristics"][ticker] = data
+            else:
+                failed.append(ticker)
         _save_cache(cache)
+        if failed:
+            logger.warning(
+                "KASE: %d/%d bonds missing characteristics after retries (ISIN/coupon may be incomplete): %s",
+                len(failed),
+                len(to_fetch),
+                ", ".join(failed[:20]) + (" ..." if len(failed) > 20 else ""),
+            )
 
     return cache.get("characteristics", cached_chars)
 
@@ -115,16 +140,10 @@ async def _fetch_boards_one(session, ticker, bond_type, semaphore):
     async with semaphore:
         ep = "gsecs" if bond_type == "gsec" else "bonds"
         url = f"https://kase.kz/api/instruments/{ep}/{ticker}/?language=ru"
-        try:
-            async with session.get(
-                url, timeout=aiohttp.ClientTimeout(total=config.REQUEST_TIMEOUT)
-            ) as resp:
-                if resp.status == 200:
-                    d = await resp.json()
-                    return ticker, d.get("boards_en", {})
-        except Exception:
-            pass
-        return ticker, None
+        data = await _get_json_with_retry(session, url)
+        if data is None:
+            return ticker, None
+        return ticker, data.get("boards_en", {})
 
 
 async def _fetch_all_boards(bonds: list[dict]) -> dict:
@@ -141,6 +160,15 @@ async def _fetch_all_boards(bonds: list[dict]) -> dict:
             for b in bonds
         ]
         results = await asyncio.gather(*tasks)
+    failed = [t for t, v in results if v is None]
+    if failed:
+        logger.warning(
+            "KASE: %d/%d bonds missing trading-regime data after retries "
+            "(may be wrongly flagged not_currently_traded): %s",
+            len(failed),
+            len(bonds),
+            ", ".join(failed[:20]) + (" ..." if len(failed) > 20 else ""),
+        )
     return {t: v for t, v in results if v is not None}
 
 
@@ -158,30 +186,42 @@ def _format_trading_regime(boards_en) -> str:
     return "нестанд. лоты"
 
 
+def _get_sync_with_retry(url, params=None, timeout=30, attempts=3, base_delay=0.8):
+    """Same rationale as _get_json_with_retry, for the sync `requests` calls
+    (the bulk securities list, HTML fallback) - these failing silently would
+    drop half the universe (one whole category) rather than one bond."""
+    last_exc = None
+    for attempt in range(attempts):
+        try:
+            r = requests.get(url, params=params, timeout=timeout)
+            r.raise_for_status()
+            return r
+        except Exception as e:
+            last_exc = e
+            if attempt < attempts - 1:
+                time.sleep(base_delay * (attempt + 1))
+    logger.warning("GET %s failed after %d attempts: %s", url, attempts, last_exc)
+    return None
+
+
 def _get_all_bonds() -> list[dict]:
     # requests.Response.json() re-parses the body into fresh objects on every
     # call - each category's response must be parsed exactly once into a
     # variable before tagging, or the "_bond_type" mutation lands on
     # throwaway dicts and every bond silently ends up untagged.
     all_bonds = []
-    try:
-        r = requests.get(SECURITIES_URL, params=CORP_BONDS_PARAMS, timeout=30)
-        r.raise_for_status()
+    r = _get_sync_with_retry(SECURITIES_URL, params=CORP_BONDS_PARAMS)
+    if r is not None:
         corp_bonds = r.json()
         for b in corp_bonds:
             b["_bond_type"] = "corp"
         all_bonds.extend(corp_bonds)
-    except Exception:
-        pass
-    try:
-        r = requests.get(SECURITIES_URL, params=GSEC_PARAMS, timeout=30)
-        r.raise_for_status()
+    r = _get_sync_with_retry(SECURITIES_URL, params=GSEC_PARAMS)
+    if r is not None:
         gsec_bonds = r.json()
         for b in gsec_bonds:
             b["_bond_type"] = "gsec"
         all_bonds.extend(gsec_bonds)
-    except Exception:
-        pass
     return all_bonds
 
 

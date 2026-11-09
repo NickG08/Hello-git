@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timedelta
 
 import aiohttp
@@ -21,6 +22,8 @@ from dateutil.relativedelta import relativedelta
 from scipy.optimize import newton
 
 from kzbonds import config
+
+logger = logging.getLogger(__name__)
 
 try:
     import holidays as holidays_lib
@@ -544,39 +547,45 @@ async def _get_bonds_from_market(session) -> list[dict]:
     return bonds_list
 
 
+async def _fetch_json_with_retry(session, url, attempts=3, base_delay=0.6):
+    """A single transient failure (proxy hiccup, AIX rate-limiting) must not
+    silently drop a bond from the whole snapshot - retry a few times with
+    backoff before giving up. Returns None only if every attempt failed."""
+    for attempt in range(attempts):
+        try:
+            async with session.get(
+                url, timeout=aiohttp.ClientTimeout(total=config.REQUEST_TIMEOUT)
+            ) as resp:
+                resp.raise_for_status()
+                return await resp.json()
+        except Exception:
+            if attempt < attempts - 1:
+                await asyncio.sleep(base_delay * (attempt + 1))
+    return None
+
+
 async def _fetch_profile(session, ticker, semaphore, cache):
     if ticker in cache.get("profiles", {}):
         return ticker, cache["profiles"][ticker]
     async with semaphore:
-        try:
-            async with session.get(
-                PROFILE_URL.format(ticker=ticker),
-                timeout=aiohttp.ClientTimeout(total=config.REQUEST_TIMEOUT),
-            ) as resp:
-                resp.raise_for_status()
-                profile = await resp.json()
+        profile = await _fetch_json_with_retry(
+            session, PROFILE_URL.format(ticker=ticker)
+        )
+        if profile is not None:
             cache.setdefault("profiles", {})[ticker] = profile
-            return ticker, profile
-        except Exception:
-            return ticker, None
+        return ticker, profile
 
 
 async def _fetch_coupon_details(session, ticker, semaphore, cache):
     if ticker in cache.get("coupon_details", {}):
         return ticker, cache["coupon_details"][ticker]
     async with semaphore:
-        try:
-            async with session.get(
-                COUPON_DETAILS_URL.format(ticker=ticker),
-                timeout=aiohttp.ClientTimeout(total=config.REQUEST_TIMEOUT),
-            ) as resp:
-                resp.raise_for_status()
-                details = await resp.json()
-            details = details or None
-            cache.setdefault("coupon_details", {})[ticker] = details
-            return ticker, details
-        except Exception:
-            return ticker, None
+        details = await _fetch_json_with_retry(
+            session, COUPON_DETAILS_URL.format(ticker=ticker)
+        )
+        details = details or None
+        cache.setdefault("coupon_details", {})[ticker] = details
+        return ticker, details
 
 
 async def _get_accrued_interest(session) -> dict:
@@ -626,6 +635,16 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
                     for b in bonds_list
                 ]
             )
+        )
+
+    failed_tickers = [t for t, p in profile_results.items() if p is None]
+    if failed_tickers:
+        logger.warning(
+            "AIX: %d/%d bonds dropped - profile fetch failed after retries: %s",
+            len(failed_tickers),
+            len(bonds_list),
+            ", ".join(failed_tickers[:20])
+            + (" ..." if len(failed_tickers) > 20 else ""),
         )
 
     settlement_date_calib = get_settlement_date()
