@@ -439,6 +439,19 @@ def _calculate_accrued_interest_pct(
         return 0.0
 
 
+def _issue_volume(profile: dict) -> float | None:
+    # AIX exposes issue size as a bond count, not money. issuedQuantity is the
+    # current count (reflects buybacks/taps); originalIssuedQuantity is the
+    # placement-time count and is often blank, so it's only a fallback.
+    face = _parse_float_safe(profile.get("faceValue"))
+    qty = _parse_float_safe(profile.get("issuedQuantity")) or _parse_float_safe(
+        profile.get("originalIssuedQuantity")
+    )
+    if not face or not qty:
+        return None
+    return qty * face
+
+
 def _extract_isin(profile: dict) -> str | None:
     """Best-effort ISIN lookup: the original scraper never extracted ISIN at
     all (it wasn't in the field list it read from /api/profile/{ticker}), so
@@ -807,10 +820,7 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
                 "ytm_total_return_reported": None,
                 "macaulay_duration": duration_result["macaulay_duration"],
                 "modified_duration": duration_result["modified_duration"],
-                # Total issue size isn't exposed by this API (unlike KASE's
-                # volume_release) - leave unset rather than reusing face_value,
-                # which is the par value of one bond, not the issue total.
-                "issue_volume": None,
+                "issue_volume": _issue_volume(profile),
                 "_quality_flags": quality_flags,
             }
         )
