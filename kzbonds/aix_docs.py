@@ -170,6 +170,13 @@ def parse_aix_terms(text: str) -> dict:
     if m:
         out["coupon_rate"] = float(m.group(1).replace(",", "."))
         out["coupon_status"] = "sukuk_target"
+    m = re.search(r"with (annual|semi-?annual|quarterly|monthly) capitali[sz]ation", flat, re.I)
+    if m:
+        out["capitalization_freq"] = {"annual": 1, "semiannual": 2, "quarterly": 4, "monthly": 12}[
+            m.group(1).lower().replace("-", "")
+        ]
+    elif re.search(r"Coupon during the first year .{0,80}?accrued but not paid", flat, re.I):
+        out["capitalization_freq"] = 1
     if "coupon_freq" not in out:
         for word, freq in (("monthly", 12), ("quarterly", 4), ("semi-annually", 2), ("annually", 1)):
             if re.search(rf"(?:payable|paid)\s+{word}", flat, re.I):
@@ -181,6 +188,9 @@ def parse_aix_terms(text: str) -> dict:
 def coupon_note(terms: dict) -> str | None:
     if terms.get("coupon_status") == "sukuk_target" and terms.get("coupon_rate"):
         return f"Целевая ставка распределения {terms['coupon_rate']:g}% годовых (мудараба, не гарантирована)"
+    if terms.get("capitalization_freq"):
+        every = {1: "раз в год", 2: "раз в полгода", 4: "раз в квартал", 12: "раз в месяц"}[terms["capitalization_freq"]]
+        return f"Купон капитализируется {every} и выплачивается при погашении"
     if terms.get("coupon_formula"):
         note = f"Плавающий купон: {terms['coupon_formula']}"
         if terms.get("accrual_start"):
@@ -210,7 +220,9 @@ def aix_document_terms(docs_by_ticker: dict[str, list[str]]) -> dict[str, dict]:
                     continue
             for k, v in cache[doc].items():
                 merged.setdefault(k, v)
-            if "coupon_freq" in merged and ("coupon_formula" in merged or "coupon_rate" in merged):
+            if "capitalization_freq" in merged or (
+                "coupon_freq" in merged and ("coupon_formula" in merged or "coupon_rate" in merged)
+            ):
                 break
         if merged:
             result[ticker] = merged

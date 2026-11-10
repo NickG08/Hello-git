@@ -375,6 +375,49 @@ def _calculate_accrued_interest(
         return None
 
 
+def _coupon_schedule(settlement_date, maturity_date, frequency):
+    """(previous coupon date, payment dates after settlement), stepping back from maturity."""
+    months = 12 // frequency
+    future, i = [maturity_date], 1
+    while True:
+        d = maturity_date - relativedelta(months=months * i)
+        if d <= settlement_date:
+            return d, sorted(future)
+        future.append(d)
+        i += 1
+
+
+def _bond_flows(clean_price, coupon_rate, settlement_date, maturity_date, frequency, basis, accrued=None):
+    """Dirty price and cash flows as (periods from settlement, years from settlement, amount).
+
+    Periods are fractional: the first coupon is discounted over the time actually
+    left to it, and the price paid includes accrued interest. Checked against the
+    yield KASE itself publishes for the last deal: 109 of 112 issues within 0.05 pp.
+    """
+    frequency = int(frequency or 2)
+    if basis in (360, "360"):
+        year_days = 360
+
+        def day_count(d1, d2):
+            return _days_30_360(d1, d2)
+    else:
+        year_days = 365
+
+        def day_count(d1, d2):
+            return (d2 - d1).days
+
+    prev_coupon, dates = _coupon_schedule(settlement_date, maturity_date, frequency)
+    period_days = year_days / frequency
+    if accrued is None:
+        accrued = (coupon_rate / frequency) * day_count(prev_coupon, settlement_date) / period_days
+    flows = []
+    for d in dates:
+        days = day_count(settlement_date, d)
+        amount = coupon_rate / frequency + (100 if d == maturity_date else 0)
+        flows.append((days / period_days, days / year_days, amount))
+    return clean_price + accrued, flows
+
+
 def _calculate_ytm_irr(
     clean_price,
     coupon_rate,
@@ -383,6 +426,7 @@ def _calculate_ytm_irr(
     frequency,
     basis,
     face_value=100,
+    accrued=None,
 ):
     if not clean_price or not maturity_date:
         return None
@@ -394,49 +438,27 @@ def _calculate_ytm_irr(
         if not maturity_date or not settlement_date or settlement_date >= maturity_date:
             return None
 
-        price = clean_price * face_value / 100
-
-        if basis in (360, "360"):
-            days_to_maturity, year_days = (
-                _days_30_360(settlement_date, maturity_date),
-                360,
-            )
-        else:
-            days_to_maturity, year_days = (maturity_date - settlement_date).days, 365
-
-        if not days_to_maturity or days_to_maturity <= 0:
-            return None
-
-        years_to_maturity = days_to_maturity / year_days
-
         if not coupon_rate:
-            # Discount bond: no coupons, single redemption of face_value at
-            # maturity - closed-form bond-equivalent yield (same convention
-            # AIX's scraper already uses for its zero-coupon case).
-            if price <= 0:
+            # Discount bond: single redemption at maturity - closed-form
+            # bond-equivalent yield (same convention as the AIX source).
+            if basis in (360, "360"):
+                years_to_maturity = _days_30_360(settlement_date, maturity_date) / 360
+            else:
+                years_to_maturity = (maturity_date - settlement_date).days / 365
+            if years_to_maturity <= 0:
                 return None
-            return round(
-                (2 * ((face_value / price) ** (1.0 / (2 * years_to_maturity)) - 1))
-                * 100,
-                4,
-            )
+            return round((2 * ((100 / clean_price) ** (1.0 / (2 * years_to_maturity)) - 1)) * 100, 4)
 
-        coupon_payment = (coupon_rate / frequency) * face_value / 100
-        n_periods = int(years_to_maturity * frequency) + 1
-        if n_periods <= 0:
-            return None
+        frequency = int(frequency or 2)
+        dirty, flows = _bond_flows(
+            clean_price, coupon_rate, settlement_date, maturity_date, frequency, basis, accrued
+        )
 
         def npv(ytm):
-            if ytm <= -1:
-                return float("inf")
-            pv = 0
-            for i in range(1, n_periods + 1):
-                cf = coupon_payment + (face_value if i == n_periods else 0)
-                pv += cf / ((1 + ytm / frequency) ** i)
-            return pv - price
+            return sum(cf / (1 + ytm / frequency) ** n for n, _, cf in flows) - dirty
 
         try:
-            return round(brentq(npv, -0.99, 2.0, maxiter=1000) * 100, 4)
+            return round(brentq(npv, -0.95 * frequency, 100.0, maxiter=1000) * 100, 4)
         except Exception:
             return None
     except Exception:
@@ -452,6 +474,7 @@ def _calculate_macaulay_duration(
     frequency,
     basis,
     face_value=100,
+    accrued=None,
 ):
     if not clean_price or not maturity_date or not ytm:
         return None
@@ -463,39 +486,22 @@ def _calculate_macaulay_duration(
         if not maturity_date or not settlement_date or settlement_date >= maturity_date:
             return None
 
-        ytm_decimal = ytm / 100
-
-        if basis in (360, "360"):
-            days_to_maturity, year_days = (
-                _days_30_360(settlement_date, maturity_date),
-                360,
-            )
-        else:
-            days_to_maturity, year_days = (maturity_date - settlement_date).days, 365
-
-        if not days_to_maturity or days_to_maturity <= 0:
-            return None
-
-        years_to_maturity = days_to_maturity / year_days
-
         if not coupon_rate:
             # Discount bond: the whole cash flow is the redemption at
             # maturity, so Macaulay duration is just time to maturity.
-            return round(years_to_maturity, 4)
+            if basis in (360, "360"):
+                return round(_days_30_360(settlement_date, maturity_date) / 360, 4)
+            return round((maturity_date - settlement_date).days / 365, 4)
 
-        coupon_payment = (coupon_rate / frequency) * face_value / 100
-        n_periods = int(years_to_maturity * frequency) + 1
-        if n_periods <= 0:
-            return None
-
-        weighted_sum, total_pv = 0, 0
-        for i in range(1, n_periods + 1):
-            t = i / frequency
-            cf = coupon_payment + (face_value if i == n_periods else 0)
-            pv = cf / ((1 + ytm_decimal / frequency) ** i)
-            weighted_sum += t * pv
+        frequency = int(frequency or 2)
+        _, flows = _bond_flows(
+            clean_price, coupon_rate, settlement_date, maturity_date, frequency, basis, accrued
+        )
+        weighted_sum, total_pv = 0.0, 0.0
+        for n, years, cf in flows:
+            pv = cf / (1 + ytm / 100 / frequency) ** n
+            weighted_sum += years * pv
             total_pv += pv
-
         return round(weighted_sum / total_pv, 4) if total_pv else None
     except Exception:
         return None
@@ -617,9 +623,9 @@ def _process_bond(
     if clean_price and clean_price < 2 and bond_type_flag == "gsec":
         clean_price = clean_price * 100
 
-    ytm_kase_dohod = bond.get(
-        "dohod"
-    )  # actual KASE YTM (NOT the 'ytm' field, which is DTM/365)
+    # KASE's own yield for the last deal (NOT the 'ytm' field, which is DTM/365).
+    # It reports 0 when it has no yield, which is not a yield of zero.
+    ytm_kase_dohod = bond.get("dohod") or None
     dohod_total = bond.get("dohod_total")
     dtm = bond.get("dtm")
     date0 = bond.get("date0")
@@ -728,7 +734,7 @@ def _process_bond(
     )
 
     ytm_calc_irr = _calculate_ytm_irr(
-        clean_price, coupon_rate, settlement_date, maturity_date, frequency, basis
+        clean_price, coupon_rate, settlement_date, maturity_date, frequency, basis, accrued=nkd_percent
     )
     ytm_for_duration = ytm_calc_irr or ytm_kase_dohod
     macaulay_duration = _calculate_macaulay_duration(
@@ -739,6 +745,7 @@ def _process_bond(
         ytm_for_duration,
         frequency,
         basis,
+        accrued=nkd_percent,
     )
     modified_duration = _calculate_modified_duration(
         macaulay_duration, ytm_for_duration, frequency

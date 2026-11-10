@@ -89,3 +89,19 @@ def test_maturity_derivation_prefers_circulation_start(monkeypatch):
         "596": {"label": "Дата открытия торгов", "value": "23.09.25"},
     }
     assert kase._derive_maturity("X", "corp", chars) == date(2026, 9, 1)
+
+
+def test_coupon_ytm_matches_the_yield_kase_publishes():
+    # Real deals of 10.11.2026; the expected values are KASE's own "dohod".
+    # The old whole-period approximation gave 12.41 and 16.19 for these two.
+    settlement = date(2026, 11, 10)
+    mfmo = _calculate_ytm_irr(99.9, 12.0, settlement, date(2026, 11, 12), 4, 360)
+    ncom = _calculate_ytm_irr(97.6, 11.0, settlement, date(2027, 2, 2), 2, 360)
+    assert abs(mfmo - 30.24) < 0.01
+    assert abs(ncom - 22.04) < 0.01
+
+
+def test_coupon_duration_never_exceeds_time_to_maturity():
+    settlement, maturity = date(2026, 11, 10), date(2027, 2, 2)
+    duration = _calculate_macaulay_duration(97.6, 11.0, settlement, maturity, 22.04, 2, 360)
+    assert 0 < duration <= round(_days_30_360(settlement, maturity) / 360, 4)

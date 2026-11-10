@@ -19,7 +19,7 @@ import aiohttp
 import pandas as pd
 from dateutil import parser as date_parser
 from dateutil.relativedelta import relativedelta
-from scipy.optimize import newton
+from scipy.optimize import brentq
 
 from kzbonds import aix_docs, config
 
@@ -180,6 +180,82 @@ def _get_coupon_schedule(
     )
 
 
+def _period_fraction(start, end, per_year, year_basis):
+    """Share of the annual coupon earned over [start, end].
+
+    A regular period earns exactly 1/per_year whatever its day count; a short,
+    long or single whole-term period earns the rate pro rata to its length.
+    """
+    days_360 = _calculate_days_30_360(start, end)
+    if abs(days_360 - 360 / per_year) <= 5:
+        return 1.0 / per_year
+    if year_basis == 360:
+        return days_360 / 360.0
+    return (end - start).days / float(year_basis)
+
+
+def _coupon_periods(settlement_date, maturity_date, coupon_freq, coupon_details, issue_date):
+    """(start, end) of every coupon period that pays after settlement."""
+    if coupon_details:
+        periods = []
+        for d in coupon_details:
+            start = _parse_date_safe(d.get("coupon_date"))
+            end = _parse_date_safe(d.get("payment_commencement_date"))
+            if start and end and end > start:
+                periods.append((start, end))
+        periods.sort()
+        # A schedule that stops short of maturity is missing its last period.
+        if periods and (maturity_date - periods[-1][1]).days > 5:
+            periods.append((periods[-1][1], maturity_date))
+        future = [p for p in periods if p[1] > settlement_date]
+        if future:
+            return future
+    prev, dates = _build_coupon_schedule_approx(settlement_date, maturity_date, coupon_freq, issue_date)
+    return list(zip([prev] + dates[:-1], dates))
+
+
+def _period_coupon(coupon_rate, coupon_freq, start, end, year_basis, capitalization_freq=None):
+    """Coupon paid for one period, per 100 of face.
+
+    AIX lists a coupon deferred to maturity as one period spanning the whole
+    term: it pays the rate for every year of it, not one year's worth. When
+    the offer terms capitalise the coupon it compounds at each capitalisation
+    date instead.
+    """
+    if capitalization_freq and _calculate_days_30_360(start, end) > 1.5 * 360 / capitalization_freq:
+        months = 12 // int(capitalization_freq)
+        value, cur = 1.0, start
+        while True:
+            nxt = cur + relativedelta(months=months)
+            if (end - nxt).days <= 5:
+                value *= 1 + coupon_rate / 100.0 * _period_fraction(cur, end, capitalization_freq, year_basis)
+                return (value - 1) * 100.0
+            value *= 1 + coupon_rate / 100.0 / capitalization_freq
+            cur = nxt
+    return coupon_rate * _period_fraction(start, end, coupon_freq, year_basis)
+
+
+def _cash_flows(
+    face_value,
+    coupon_rate,
+    coupon_freq,
+    settlement_date,
+    maturity_date,
+    year_basis,
+    coupon_details=None,
+    issue_date=None,
+    capitalization_freq=None,
+):
+    """(payment date, amount) for every payment after settlement; the last one carries the principal."""
+    periods = _coupon_periods(settlement_date, maturity_date, coupon_freq, coupon_details, issue_date)
+    flows = []
+    for k, (start, end) in enumerate(periods):
+        coupon = _period_coupon(coupon_rate, coupon_freq, start, end, year_basis, capitalization_freq)
+        amount = face_value * coupon / 100.0 + (face_value if k == len(periods) - 1 else 0)
+        flows.append((end, amount))
+    return flows
+
+
 def _calculate_ytm(
     face_value,
     current_price,
@@ -191,6 +267,7 @@ def _calculate_ytm(
     year_basis=365,
     coupon_details=None,
     issue_date=None,
+    capitalization_freq=None,
 ):
     try:
         price = face_value * current_price / 100.0
@@ -201,33 +278,28 @@ def _calculate_ytm(
                 2 * ((face_value / price) ** (1.0 / (2 * years_to_maturity)) - 1)
             ) * 100
 
-        annual_coupon = face_value * coupon_rate / 100.0
-        coupon_payment = annual_coupon / coupon_freq
-        _, future_dates = _get_coupon_schedule(
+        flows = _cash_flows(
+            face_value,
+            coupon_rate,
+            coupon_freq,
             settlement_date,
             maturity_date,
-            coupon_freq,
             year_basis,
             coupon_details,
             issue_date,
+            capitalization_freq,
         )
-        n = len(future_dates)
         nominal_period_days = year_basis / coupon_freq
 
         def bond_price(ytm_guess):
             ytm_period = ytm_guess / coupon_freq
             pv = 0.0
-            for k, pay_date in enumerate(future_dates):
-                t_periods = (
-                    _day_count(settlement_date, pay_date, year_basis)
-                    / nominal_period_days
-                )
-                cf = coupon_payment + (face_value if k == n - 1 else 0)
+            for pay_date, cf in flows:
+                t_periods = _day_count(settlement_date, pay_date, year_basis) / nominal_period_days
                 pv += cf / ((1 + ytm_period) ** t_periods)
             return pv - price
 
-        ytm = newton(bond_price, coupon_rate / 100.0, maxiter=100, tol=1e-6)
-        return ytm * 100
+        return brentq(bond_price, -0.95 * coupon_freq, 100.0, maxiter=500) * 100
     except Exception:
         return None
 
@@ -244,6 +316,7 @@ def _calculate_macaulay_duration(
     year_basis=365,
     coupon_details=None,
     issue_date=None,
+    capitalization_freq=None,
 ):
     try:
         price = face_value * current_price / 100.0
@@ -252,26 +325,25 @@ def _calculate_macaulay_duration(
         if not coupon_rate:
             return years_to_maturity
 
-        annual_coupon = face_value * coupon_rate / 100.0
-        coupon_payment = annual_coupon / coupon_freq
-        _, future_dates = _get_coupon_schedule(
+        flows = _cash_flows(
+            face_value,
+            coupon_rate,
+            coupon_freq,
             settlement_date,
             maturity_date,
-            coupon_freq,
             year_basis,
             coupon_details,
             issue_date,
+            capitalization_freq,
         )
-        n = len(future_dates)
         nominal_period_days = year_basis / coupon_freq
         ytm_period = (ytm / 100.0) / coupon_freq
 
         weighted_cash_flows = 0
-        for k, pay_date in enumerate(future_dates):
+        for pay_date, cf in flows:
             days_to_pay = _day_count(settlement_date, pay_date, year_basis)
             t_periods = days_to_pay / nominal_period_days
             time_years = days_to_pay / year_basis
-            cf = coupon_payment + (face_value if k == n - 1 else 0)
             pv = cf / ((1 + ytm_period) ** t_periods)
             weighted_cash_flows += time_years * pv
 
@@ -300,6 +372,7 @@ def _determine_bond_type_and_calculate_duration(bond_data: dict) -> dict:
         coupon_type = (bond_data.get("coupon_type") or "").strip()
         issue_date = bond_data.get("issue_date")
         coupon_details = bond_data.get("coupon_details")
+        capitalization_freq = bond_data.get("capitalization_freq")
         is_floating = coupon_type.lower() == "floating"
 
         empty = {
@@ -356,6 +429,7 @@ def _determine_bond_type_and_calculate_duration(bond_data: dict) -> dict:
             year_basis=year_basis,
             coupon_details=coupon_details,
             issue_date=issue_date,
+            capitalization_freq=capitalization_freq,
         )
         macaulay_duration = _calculate_macaulay_duration(
             face_value,
@@ -369,6 +443,7 @@ def _determine_bond_type_and_calculate_duration(bond_data: dict) -> dict:
             year_basis=year_basis,
             coupon_details=coupon_details,
             issue_date=issue_date,
+            capitalization_freq=capitalization_freq,
         )
         modified_duration = _calculate_modified_duration(
             macaulay_duration, ytm, coupon_freq_calc
@@ -474,6 +549,22 @@ def _has_term_gaps(profile: dict) -> bool:
     return not _parse_float_safe(profile.get("couponFreq")) or not _parse_float_safe(
         profile.get("couponRate")
     )
+
+
+def _has_deferred_coupon(profile: dict, coupon_details) -> bool:
+    """One coupon period much longer than the stated frequency: the coupon is
+    paid at maturity, and only the offer terms say whether it is capitalised."""
+    if (profile.get("couponType") or "").strip().lower() == "capitalized":
+        return True
+    freq = _parse_float_safe(profile.get("couponFreq"))
+    if not freq or not coupon_details:
+        return False
+    for d in coupon_details:
+        start = _parse_date_safe(d.get("coupon_date"))
+        end = _parse_date_safe(d.get("payment_commencement_date"))
+        if start and end and _calculate_days_30_360(start, end) > 1.5 * 360 / freq:
+            return True
+    return False
 
 
 def _offering_urls(profile: dict) -> list[str]:
@@ -740,7 +831,11 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
         {
             b["ticker"]: _offering_urls(profile_results[b["ticker"]])
             for b in bonds_list
-            if profile_results.get(b["ticker"]) and _has_term_gaps(profile_results[b["ticker"]])
+            if profile_results.get(b["ticker"])
+            and (
+                _has_term_gaps(profile_results[b["ticker"]])
+                or _has_deferred_coupon(profile_results[b["ticker"]], coupon_details_results.get(b["ticker"]))
+            )
         },
     )
 
@@ -829,6 +924,7 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
             "coupon_type": profile.get("couponType"),
             "issue_date": issue_date_val,
             "coupon_details": coupon_details_val,
+            "capitalization_freq": dterms.get("capitalization_freq"),
         }
         duration_result = _determine_bond_type_and_calculate_duration(merged)
 
@@ -852,6 +948,9 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
             quality_flags.append("no_trades_today")
 
         bond_kind = _aix_bond_kind(profile)
+        if dterms.get("capitalization_freq") and bond_kind == "Купонная, фиксированная ставка":
+            # AIX labels some capitalising issues "Fixed"; the offer terms decide.
+            bond_kind = "Купонная, капитализация купона"
         if bond_kind == "Сукук" and not coupon_rate_val:
             if dterms.get("coupon_status") == "sukuk_target":
                 coupon_rate_val = dterms["coupon_rate"]
