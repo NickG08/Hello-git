@@ -68,3 +68,17 @@ def test_capitalisation_read_from_offer_terms():
     assert (annual["capitalization_freq"], semi["capitalization_freq"], first_year["capitalization_freq"]) == (1, 2, 1)
     assert coupon_note(semi) == "Купон капитализируется раз в полгода и выплачивается при погашении"
     assert "capitalization_freq" not in parse_aix_terms("Frequency of coupon payments Deferred until maturity")
+
+
+def test_accrued_interest_follows_the_same_schedule_as_the_cash_flows():
+    # RWGN1.1126: AIX lists coupons up to 16.10.2026, the bond matures 16.11.2026.
+    # Accrued interest must run from 16.10, not from a date on another grid -
+    # otherwise the price paid exceeds everything the bond still pays.
+    from kzbonds.sources.aix import _calculate_accrued_interest_pct
+
+    details = [_period("2026-04-16", "2026-07-16", 10), _period("2026-07-16", "2026-10-16", 10)]
+    maturity = datetime(2026, 11, 16)
+    accrued = _calculate_accrued_interest_pct(10.0, 4, SETTLEMENT, maturity, 360, None, details)
+    assert round(accrued, 4) == 0.75
+    ytm = _calculate_ytm(100.0, 100 + accrued, 10.0, 3 / 360, 4, SETTLEMENT, maturity, 360, details)
+    assert 8 < ytm < 12

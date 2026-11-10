@@ -156,28 +156,12 @@ def _get_coupon_schedule(
     coupon_details=None,
     issue_date=None,
 ):
-    """Real coupon dates from /api/coupon-details when available, else an
-    approximate regular grid counted back from maturity."""
-    if coupon_details:
-        periods = []
-        for d in coupon_details:
-            start = _parse_date_safe(d.get("coupon_date"))
-            end = _parse_date_safe(d.get("payment_commencement_date"))
-            if start and end and end > start:
-                periods.append((start, end))
-        periods.sort()
-        future_dates = [end for start, end in periods if end > settlement_date]
-        if future_dates:
-            prev_coupon_date = periods[0][0]
-            for start, end in periods:
-                if start <= settlement_date:
-                    prev_coupon_date = start
-                else:
-                    break
-            return prev_coupon_date, future_dates
-    return _build_coupon_schedule_approx(
-        settlement_date, maturity_date, coupon_freq, issue_date
-    )
+    """(start of the running coupon period, payment dates after settlement).
+
+    Same periods the cash flows are built from, so accrued interest and the
+    coupon it accrues towards can never come from two different schedules."""
+    periods = _coupon_periods(settlement_date, maturity_date, coupon_freq, coupon_details, issue_date)
+    return periods[0][0], [end for _, end in periods]
 
 
 def _period_fraction(start, end, per_year, year_basis):
@@ -195,7 +179,9 @@ def _period_fraction(start, end, per_year, year_basis):
 
 
 def _coupon_periods(settlement_date, maturity_date, coupon_freq, coupon_details, issue_date):
-    """(start, end) of every coupon period that pays after settlement."""
+    """(start, end) of every coupon period that pays after settlement: real
+    dates from /api/coupon-details when available, else a regular grid counted
+    back from maturity."""
     if coupon_details:
         periods = []
         for d in coupon_details:
