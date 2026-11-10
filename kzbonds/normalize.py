@@ -40,6 +40,7 @@ UNIFIED_COLUMNS = [
     "dirty_price",
     "coupon_rate",
     "coupon_freq",
+    "coupon_note",
     "day_count_basis",
     "last_coupon_date",
     "maturity_date",
@@ -101,6 +102,10 @@ _FLAG_TO_QUALITY = {
     "coupon_freq_assumed": (
         "STALE_OR_ESTIMATED",
         "Периодичность купона не опубликована ни биржей, ни в проспекте — принято 2 раза в год.",
+    ),
+    "sukuk_target_rate": (
+        "NO_YTM",
+        "Сукук мудараба: в проспекте только целевая ставка распределения, доход не гарантирован — YTM не рассчитывается.",
     ),
     "no_coupon_rate": (
         "STALE_OR_ESTIMATED",

@@ -21,7 +21,7 @@ from dateutil import parser as date_parser
 from dateutil.relativedelta import relativedelta
 from scipy.optimize import newton
 
-from kzbonds import config
+from kzbonds import aix_docs, config
 
 logger = logging.getLogger(__name__)
 
@@ -468,6 +468,23 @@ def _aix_bond_kind(profile: dict) -> str:
     return "Купонная, фиксированная ставка"
 
 
+def _has_term_gaps(profile: dict) -> bool:
+    if _aix_bond_kind(profile) == "Дисконтная":
+        return False
+    return not _parse_float_safe(profile.get("couponFreq")) or not _parse_float_safe(
+        profile.get("couponRate")
+    )
+
+
+def _offering_urls(profile: dict) -> list[str]:
+    raw = profile.get("offeringMaterials")
+    try:
+        urls = json.loads(raw) if raw else []
+    except ValueError:
+        urls = [raw]
+    return [u for u in urls if isinstance(u, str) and u.startswith("http")]
+
+
 def _is_perpetual(profile: dict, ticker: str) -> bool:
     # AIX gives perpetuals a placeholder maturity (e.g. 2060), so the name/ticker
     # is the only reliable signal.
@@ -705,6 +722,15 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
 
     _save_cache(cache)
 
+    doc_terms = await asyncio.to_thread(
+        aix_docs.aix_document_terms,
+        {
+            b["ticker"]: _offering_urls(profile_results[b["ticker"]])
+            for b in bonds_list
+            if profile_results.get(b["ticker"]) and _has_term_gaps(profile_results[b["ticker"]])
+        },
+    )
+
     rows = []
     for b in bonds_list:
         profile = profile_results.get(b["ticker"])
@@ -735,6 +761,9 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
 
         coupon_rate_val = _parse_float_safe(profile.get("couponRate"))
         coupon_freq_val = _parse_float_safe(profile.get("couponFreq"))
+        dterms = doc_terms.get(b["ticker"], {})
+        if not coupon_freq_val and dterms.get("coupon_freq"):
+            coupon_freq_val = float(dterms["coupon_freq"])
         maturity_date_val = _parse_date_safe(profile.get("maturityDate"))
         issue_date_val = _parse_date_safe(profile.get("issueDate"))
         year_basis_val = _parse_float_safe(profile.get("yearBasis")) or 365
@@ -780,7 +809,7 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
             "face_value": profile.get("faceValue"),
             "reference_price": dirty_price,
             "coupon_rate": profile.get("couponRate"),
-            "coupon_freq": profile.get("couponFreq"),
+            "coupon_freq": coupon_freq_val,
             "year_basis": profile.get("yearBasis"),
             "maturity_date": maturity_date_val,
             "issuer": profile.get("issuer"),
@@ -811,7 +840,11 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
 
         bond_kind = _aix_bond_kind(profile)
         if bond_kind == "Сукук" and not coupon_rate_val:
-            quality_flags.append("sukuk_no_rate")
+            if dterms.get("coupon_status") == "sukuk_target":
+                coupon_rate_val = dterms["coupon_rate"]
+                quality_flags.append("sukuk_target_rate")
+            else:
+                quality_flags.append("sukuk_no_rate")
             duration_result = {
                 **duration_result,
                 "ytm": None,
@@ -837,6 +870,7 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
                 "dirty_price": dirty_price,
                 "coupon_rate": coupon_rate_val,
                 "coupon_freq": coupon_freq_val,
+                "coupon_note": aix_docs.coupon_note(dterms),
                 "day_count_basis": year_basis_val,
                 "last_coupon_date": None,
                 "maturity_date": (
