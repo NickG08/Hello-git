@@ -70,3 +70,10 @@ def test_only_bonds_with_gaps_need_documents():
 def test_offering_urls_parsed_from_profile():
     p = {"offeringMaterials": '["https://k4txdyb.onk2.com/a?documentid=1", "not a url"]'}
     assert _offering_urls(p) == ["https://k4txdyb.onk2.com/a?documentid=1"]
+
+
+def test_perpetual_notes():
+    from kzbonds.sources.aix import _perpetual_note
+
+    assert "первый колл 03.11.2030" in _perpetual_note("FRTBS.PERP")
+    assert _perpetual_note("XYZ.PERP") == "Бессрочная; дата погашения у биржи условная"

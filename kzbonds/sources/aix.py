@@ -485,6 +485,19 @@ def _offering_urls(profile: dict) -> list[str]:
     return [u for u in urls if isinstance(u, str) and u.startswith("http")]
 
 
+# AIX data has no call schedule for perpetuals; checked against the issuer's
+# release and market data (ForteBank IR, BondbloX, Wiener Börse), Nov 2026.
+_FORTEBANK_AT1 = (
+    "AT1, бессрочная (Reg S + 144A, всего $400 млн); первый колл 03.11.2030, далее раз в полгода; "
+    "в AIX ссылка на документ другого выпуска (KZX000005186)"
+)
+_PERPETUAL_NOTES = {"FRTB.PERP": _FORTEBANK_AT1, "FRTBS.PERP": _FORTEBANK_AT1}
+
+
+def _perpetual_note(ticker: str) -> str:
+    return _PERPETUAL_NOTES.get(ticker, "Бессрочная; дата погашения у биржи условная")
+
+
 def _is_perpetual(profile: dict, ticker: str) -> bool:
     # AIX gives perpetuals a placeholder maturity (e.g. 2060), so the name/ticker
     # is the only reliable signal.
@@ -870,7 +883,11 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
                 "dirty_price": dirty_price,
                 "coupon_rate": coupon_rate_val,
                 "coupon_freq": coupon_freq_val,
-                "coupon_note": aix_docs.coupon_note(dterms),
+                "coupon_note": (
+                    _perpetual_note(b["ticker"])
+                    if _is_perpetual(profile, b["ticker"])
+                    else aix_docs.coupon_note(dterms)
+                ),
                 "day_count_basis": year_basis_val,
                 "last_coupon_date": None,
                 "maturity_date": (
