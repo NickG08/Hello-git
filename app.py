@@ -27,6 +27,7 @@ EXCHANGE_COLORS = {"KASE": "#4E79A7", "AIX": "#F28E2B"}
 QUALITY_COLORS = {
     "NO_PRICE": "#E15759",
     "NO_YTM": "#E15759",
+    "STALE_PRICE": "#B0B0B0",
     "CAPITALIZING": "#B07AA1",
     "FLOATING": "#9C755F",
     "STALE_OR_ESTIMATED": "#F1CE63",
@@ -39,6 +40,7 @@ QUALITY_BADGE = {
     "ILLIQUID": "⚪ неликвидно",
     "NO_PRICE": "🔴 нет цены",
     "NO_YTM": "🔴 нет YTM",
+    "STALE_PRICE": "⚪ цена устарела",
     "CAPITALIZING": "🟣 капитализация купона",
     "FLOATING": "🟤 плавающая ставка",
 }

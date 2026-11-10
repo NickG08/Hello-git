@@ -784,6 +784,7 @@ def _process_bond(
         "maturity_date": maturity_date,
         "days_to_maturity": dtm,
         "trade_date": date0,
+        "last_trade_date": str(date0)[:10] if date0 else None,
         "trading_regime": trading_regime,
         "ytm": ytm_calc_irr if ytm_calc_irr is not None else ytm_kase_dohod,
         "ytm_exchange_reported": ytm_kase_dohod,

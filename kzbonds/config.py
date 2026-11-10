@@ -32,4 +32,10 @@ REQUEST_TIMEOUT = int(os.getenv("KZBONDS_REQUEST_TIMEOUT", "20"))
 # there is no point polling more often than this.
 PIPELINE_INTERVAL_HOURS = float(os.getenv("KZBONDS_PIPELINE_INTERVAL_HOURS", "6"))
 
+# A yield is only shown when the price behind it comes from a deal at most
+# this many days old. Measured on KASE: within 30 days an old price shifts
+# the yield by a few hundredths of a point (1.5 pp at worst); past 90 days
+# the error reaches whole points, and bonds close to maturity blow up.
+YTM_MAX_PRICE_AGE_DAYS = int(os.getenv("KZBONDS_YTM_MAX_PRICE_AGE_DAYS", "30"))
+
 ANALYSIS_NOTE_PATH = DATA_DIR / "latest_note.md"

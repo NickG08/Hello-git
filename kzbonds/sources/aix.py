@@ -42,6 +42,8 @@ MAIN_RECORDS_URL = (
 PROFILE_URL = f"{API_BASE}/api/profile/{{ticker}}"
 COUPON_DETAILS_URL = f"{API_BASE}/api/coupon-details/{{ticker}}"
 ACCRUED_INTEREST_URL = f"{API_BASE}/api/bonds"
+TRADE_HISTORY_URL = f"{API_BASE}/api/symbol/historical-specific/"
+TRADE_HISTORY_START = "2017-01-01"  # before AIX's first listing
 
 SETTLEMENT_DAYS = (
     2  # T+2 trading days, matches AIX's own "Accrued Interest (T+2)" column
@@ -691,14 +693,14 @@ async def _get_bonds_from_market(session) -> list[dict]:
     return bonds_list
 
 
-async def _fetch_json_with_retry(session, url, attempts=3, base_delay=0.6):
+async def _fetch_json_with_retry(session, url, attempts=3, base_delay=0.6, params=None):
     """A single transient failure (proxy hiccup, AIX rate-limiting) must not
     silently drop a bond from the whole snapshot - retry a few times with
     backoff before giving up. Returns None only if every attempt failed."""
     for attempt in range(attempts):
         try:
             async with session.get(
-                url, timeout=aiohttp.ClientTimeout(total=config.REQUEST_TIMEOUT)
+                url, params=params, timeout=aiohttp.ClientTimeout(total=config.REQUEST_TIMEOUT)
             ) as resp:
                 resp.raise_for_status()
                 return await resp.json()
@@ -730,6 +732,44 @@ async def _fetch_coupon_details(session, ticker, semaphore, cache):
         details = details or None
         cache.setdefault("coupon_details", {})[ticker] = details
         return ticker, details
+
+
+def _last_trade_in(history) -> str | None:
+    """Latest day with turnover in a /symbol/historical-specific/ response."""
+    days = [
+        str(r.get("date"))[:10]
+        for r in history or []
+        if isinstance(r, dict) and ((r.get("volume") or 0) > 0 or (r.get("value") or 0) > 0)
+    ]
+    return max(days) if days else None
+
+
+async def _fetch_last_trade(session, ticker, semaphore, cache, today: str, traded_today: bool):
+    """Date of the bond's last deal on AIX, or None if it never traded.
+
+    The market feed only says whether a bond traded today; the daily history
+    is the one place that tells a real price from a reference price nobody has
+    dealt at. The answer is cached with the day it was checked, so later runs
+    only ask for the days since.
+    """
+    known = cache.setdefault("last_trades", {}).get(ticker) or {}
+    last = known.get("last")
+    if known.get("checked") != today:
+        params = {
+            "filter": json.dumps(
+                {"secCode": ticker, "dateFrom": known.get("checked") or TRADE_HISTORY_START, "dateTo": today}
+            )
+        }
+        async with semaphore:
+            history = await _fetch_json_with_retry(session, TRADE_HISTORY_URL, params=params)
+        if history is not None:
+            last = max(filter(None, [last, _last_trade_in(history)]), default=None)
+            cache["last_trades"][ticker] = {"last": last, "checked": today}
+        else:
+            logger.warning("AIX: trading history for %s not returned, last deal date may be missing", ticker)
+    if traded_today:
+        last = max(filter(None, [last, today]))
+    return ticker, last
 
 
 async def _get_accrued_interest(session) -> dict:
@@ -776,6 +816,18 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
             await asyncio.gather(
                 *[
                     _fetch_coupon_details(session, b["ticker"], semaphore, cache)
+                    for b in bonds_list
+                ]
+            )
+        )
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        last_trades = dict(
+            await asyncio.gather(
+                *[
+                    _fetch_last_trade(
+                        session, b["ticker"], semaphore, cache, today, bool(b.get("number_of_trades_today") or 0)
+                    )
                     for b in bonds_list
                 ]
             )
@@ -986,6 +1038,7 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
                     else None
                 ),
                 "trade_date": None,
+                "last_trade_date": last_trades.get(b["ticker"]),
                 "trading_regime": None,
                 "ytm": duration_result["ytm"],
                 "ytm_exchange_reported": None,

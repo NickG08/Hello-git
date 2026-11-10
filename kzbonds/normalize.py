@@ -11,6 +11,9 @@ the single place to touch when the exact field set changes later.
 price_quality values, worst first (first match on a bond's flags wins):
   NO_PRICE       - bond has no tradable/quoted price at all; YTM is not meaningful.
   NO_YTM         - price exists but YTM could not be computed (bad/missing coupon data).
+  STALE_PRICE    - the price is from a deal older than config.YTM_MAX_PRICE_AGE_DAYS, or the
+                   bond never traded and the price is only the exchange's reference price;
+                   YTM and duration are not shown (the raw figure is kept in `ytm_calc`).
   CAPITALIZING   - coupon capitalizes into principal; our YTM math doesn't model that.
   FLOATING       - floating-rate coupon with unknown current rate.
   STALE_OR_ESTIMATED - price/coupon came from a fallback (HTML scrape, cached
@@ -22,6 +25,8 @@ price_quality values, worst first (first match on a bond's flags wins):
 from __future__ import annotations
 
 import pandas as pd
+
+from kzbonds import config
 
 UNIFIED_COLUMNS = [
     "exchange",
@@ -36,6 +41,8 @@ UNIFIED_COLUMNS = [
     "face_value",
     "face_currency",
     "clean_price",
+    "last_trade_date",
+    "price_age_days",
     "accrued_interest",
     "dirty_price",
     "coupon_rate",
@@ -46,6 +53,7 @@ UNIFIED_COLUMNS = [
     "maturity_date",
     "days_to_maturity",
     "ytm",
+    "ytm_calc",
     "ytm_exchange_reported",
     "ytm_total_return_reported",
     "macaulay_duration",
@@ -64,6 +72,14 @@ _FLAG_TO_QUALITY = {
     "calc_unavailable": (
         "NO_YTM",
         "Показатели не рассчитаны (см. тип облигации в исходных данных).",
+    ),
+    "price_stale": (
+        "STALE_PRICE",
+        f"Последняя сделка была больше {config.YTM_MAX_PRICE_AGE_DAYS} дней назад — YTM и дюрация не показываются.",
+    ),
+    "never_traded": (
+        "STALE_PRICE",
+        "По бумаге не было ни одной сделки на бирже, цена справочная — YTM и дюрация не показываются.",
     ),
     "capitalizing_coupon": (
         "CAPITALIZING",
@@ -117,6 +133,7 @@ _FLAG_TO_QUALITY = {
 _QUALITY_PRIORITY = [
     "NO_PRICE",
     "NO_YTM",
+    "STALE_PRICE",
     "CAPITALIZING",
     "FLOATING",
     "STALE_OR_ESTIMATED",
@@ -137,9 +154,40 @@ def _resolve_quality(flags: list[str]) -> tuple[str, str]:
     return best_quality, details
 
 
-def normalize(df: pd.DataFrame) -> pd.DataFrame:
-    """Add price_quality/price_quality_detail and coerce dtypes. Idempotent
-    and safe to call on an already-normalized frame (re-derives the flag)."""
+def _apply_price_freshness(df: pd.DataFrame, flags_col: pd.Series, as_of=None) -> pd.Series:
+    """Hide YTM and duration when the price behind them is not a recent deal.
+
+    The yield is solved as of today from the last deal's price. An old price
+    makes that meaningless (a T-note priced in 2024 showed 36%), and a bond
+    that never traded only has the exchange's reference price, usually par.
+    The raw figure stays in `ytm_calc`; returns the flags with the reason added.
+    """
+    as_of = pd.Timestamp(as_of) if as_of is not None else pd.Timestamp.now().normalize()
+    if "last_trade_date" not in df.columns:
+        df["last_trade_date"] = None
+    last = pd.to_datetime(df["last_trade_date"], errors="coerce").dt.normalize()
+    df["price_age_days"] = (as_of - last).dt.days.clip(lower=0)
+    df["last_trade_date"] = last.dt.strftime("%Y-%m-%d").where(last.notna(), None)
+    if "ytm_calc" not in df.columns:
+        df["ytm_calc"] = df["ytm"]
+
+    has_price = pd.to_numeric(df["clean_price"], errors="coerce").notna()
+    never_traded = has_price & last.isna()
+    stale = has_price & (df["price_age_days"] > config.YTM_MAX_PRICE_AGE_DAYS)
+    for col in ("ytm", "macaulay_duration", "modified_duration"):
+        df[col] = df[col].astype(object).where(~(never_traded | stale), None)
+    return pd.Series(
+        [
+            list(flags) + (["never_traded"] if nt else ["price_stale"] if st else [])
+            for flags, nt, st in zip(flags_col, never_traded, stale)
+        ],
+        index=df.index,
+    )
+
+
+def normalize(df: pd.DataFrame, as_of=None) -> pd.DataFrame:
+    """Add price_quality/price_quality_detail, apply the price-freshness rule
+    and coerce dtypes. `as_of` is the date price age is measured from (today)."""
     if df.empty:
         return pd.DataFrame(columns=UNIFIED_COLUMNS)
 
@@ -149,6 +197,7 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
         if "_quality_flags" in df.columns
         else pd.Series([[]] * len(df), index=df.index)
     )
+    flags_col = _apply_price_freshness(df, flags_col, as_of)
     resolved = flags_col.apply(_resolve_quality)
     df["price_quality"] = resolved.apply(lambda t: t[0])
     df["price_quality_detail"] = resolved.apply(lambda t: t[1])
@@ -162,12 +211,14 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
         "coupon_rate",
         "coupon_freq",
         "ytm",
+        "ytm_calc",
         "ytm_exchange_reported",
         "ytm_total_return_reported",
         "macaulay_duration",
         "modified_duration",
         "issue_volume",
         "days_to_maturity",
+        "price_age_days",
     ):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -179,10 +230,10 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
     return df[UNIFIED_COLUMNS]
 
 
-def combine(kase_df: pd.DataFrame, aix_df: pd.DataFrame) -> pd.DataFrame:
+def combine(kase_df: pd.DataFrame, aix_df: pd.DataFrame, as_of=None) -> pd.DataFrame:
     """Normalize both source frames and stack them into one unified table."""
     parts = [
-        normalize(df) for df in (kase_df, aix_df) if df is not None and not df.empty
+        normalize(df, as_of) for df in (kase_df, aix_df) if df is not None and not df.empty
     ]
     if not parts:
         return pd.DataFrame(columns=UNIFIED_COLUMNS)

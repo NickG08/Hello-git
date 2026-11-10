@@ -82,3 +82,16 @@ def test_accrued_interest_follows_the_same_schedule_as_the_cash_flows():
     assert round(accrued, 4) == 0.75
     ytm = _calculate_ytm(100.0, 100 + accrued, 10.0, 3 / 360, 4, SETTLEMENT, maturity, 360, details)
     assert 8 < ytm < 12
+
+
+def test_last_trade_is_the_latest_day_with_turnover():
+    from kzbonds.sources.aix import _last_trade_in
+
+    history = [
+        {"date": "2026-11-10T00:00:00Z", "close": 0, "volume": None, "value": None},
+        {"date": "2026-04-27T00:00:00Z", "close": 96.47, "volume": 12, "value": 11576.4},
+        {"date": "2026-03-02T00:00:00Z", "close": 95.1, "volume": 5, "value": 4755.0},
+    ]
+    assert _last_trade_in(history) == "2026-04-27"
+    assert _last_trade_in([{"date": "2026-11-10T00:00:00Z", "close": 0, "volume": None}]) is None
+    assert _last_trade_in(None) is None

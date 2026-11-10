@@ -14,6 +14,7 @@ def _bond(exchange, ticker, ytm, duration, currency="USD", quality_flags=None):
         "instrument_type": "Купонная",
         "market_segment": "main",
         "clean_price": 98.0,
+        "last_trade_date": pd.Timestamp.now().strftime("%Y-%m-%d"),
         "accrued_interest": 0.3,
         "dirty_price": 98.3,
         "coupon_rate": 5.0,
