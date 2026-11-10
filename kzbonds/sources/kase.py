@@ -23,7 +23,7 @@ import requests
 from dateutil.relativedelta import relativedelta
 from scipy.optimize import brentq
 
-from kzbonds import config
+from kzbonds import config, prospectus
 
 logger = logging.getLogger(__name__)
 
@@ -545,6 +545,20 @@ def _extract_characteristic_by_label(characteristics, label_search):
     return None
 
 
+def _has_term_gaps(bond: dict, characteristics: dict) -> bool:
+    ticker_data = bond.get("ticker") or {}
+    if ticker_data.get("typesec_en") == "discount":
+        return not ticker_data.get("finish_date")
+    return (
+        not ticker_data.get("cupon")
+        or not ticker_data.get("finish_date")
+        or not (
+            _extract_characteristic_value(characteristics, "coupon_prev_date")
+            and _extract_characteristic_value(characteristics, "coupon_near_pay_date")
+        )
+    )
+
+
 def _derive_maturity(ticker, bond_type_flag, characteristics) -> date | None:
     # KASE leaves maturity blank on some issues placed directly on the exchange.
     # Per their prospectuses circulation starts at the first placement trade,
@@ -587,7 +601,11 @@ def _kase_bond_kind(ticker_data: dict, characteristics: dict) -> str:
 
 
 def _process_bond(
-    bond: dict, settlement_date: date, all_characteristics: dict, all_boards: dict
+    bond: dict,
+    settlement_date: date,
+    all_characteristics: dict,
+    all_boards: dict,
+    prospectus_terms: dict | None = None,
 ) -> dict:
     ticker = bond.get("code")
     bond_type_flag = bond.get("_bond_type", "corp")
@@ -656,12 +674,21 @@ def _process_bond(
     frequency = _calculate_coupon_frequency(last_coupon_date_str, next_coupon_date_str)
 
     quality_flags: list[str] = []
+    pterms = (prospectus_terms or {}).get(ticker, {})
+    if not is_discount and not (last_coupon_date_str and next_coupon_date_str):
+        if pterms.get("coupon_freq"):
+            frequency = pterms["coupon_freq"]
+        else:
+            quality_flags.append("coupon_freq_assumed")
 
     if not last_coupon_date and next_coupon_date and frequency:
         calc_prev = next_coupon_date - relativedelta(months=12 // frequency)
         if calc_prev < settlement_date:
             last_coupon_date = calc_prev
             last_coupon_date_str = calc_prev.isoformat()
+
+    if not coupon_rate and not is_discount and pterms.get("coupon_rate"):
+        coupon_rate = pterms["coupon_rate"]
 
     if not coupon_rate and not is_discount:
         main_api_characteristics = _get_bond_main_api(ticker, bond_type_flag).get(
@@ -672,12 +699,11 @@ def _process_bond(
             coupon_rate = coupon_from_desc
             quality_flags.append("coupon_from_description")
 
-    if (not coupon_rate and not is_discount) or not maturity_date:
+    # The HTML coupon scrape is not used: the page embeds other bonds' news, and
+    # it once read MFMOb42's coupon (11%) as 23% from a news item about MFMOb38.
+    if not maturity_date:
         html_data = _parse_bond_html_fallback(ticker)
         if html_data:
-            if not coupon_rate and not is_discount and "cupon" in html_data:
-                coupon_rate = html_data["cupon"]
-                quality_flags.append("html_fallback")
             if not maturity_date and "finish_date" in html_data:
                 maturity_date = html_data["finish_date"]
                 quality_flags.append("html_fallback")
@@ -772,12 +798,21 @@ async def fetch_kase_bonds_async(settlement_date: date | None = None) -> pd.Data
 
     all_characteristics = await _fetch_all_characteristics(fx_bonds)
     all_boards = await _fetch_all_boards(fx_bonds)
+    gaps = [
+        b.get("code")
+        for b in fx_bonds
+        if _has_term_gaps(b, all_characteristics.get(b.get("code"), {}))
+    ]
+    prospectus_terms = await asyncio.to_thread(prospectus.kase_prospectus_terms, gaps)
+    logger.info("KASE prospectus terms: %d of %d bonds with gaps", len(prospectus_terms), len(gaps))
 
     rows = []
     for bond in fx_bonds:
         try:
             rows.append(
-                _process_bond(bond, settlement_date, all_characteristics, all_boards)
+                _process_bond(
+                    bond, settlement_date, all_characteristics, all_boards, prospectus_terms
+                )
             )
         except Exception:
             continue
