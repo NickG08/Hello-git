@@ -452,6 +452,30 @@ def _issue_volume(profile: dict) -> float | None:
     return qty * face
 
 
+def _aix_bond_kind(profile: dict) -> str:
+    name = (profile.get("securityName") or "").lower()
+    coupon_type = (profile.get("couponType") or "").strip().lower()
+    rate = _parse_float_safe(profile.get("couponRate"))
+    if "sukuk" in name:
+        return "Сукук"
+    # Floating issues with an unpublished current rate also report couponRate 0.
+    if coupon_type == "floating":
+        return "Купонная, плавающая ставка"
+    if coupon_type == "capitalized":
+        return "Купонная, капитализация купона"
+    if coupon_type == "zero" or "zero" in name or not rate:
+        return "Дисконтная"
+    return "Купонная, фиксированная ставка"
+
+
+def _is_perpetual(profile: dict, ticker: str) -> bool:
+    # AIX gives perpetuals a placeholder maturity (e.g. 2060), so the name/ticker
+    # is the only reliable signal.
+    return ticker.upper().endswith(".PERP") or "perpetual" in (
+        profile.get("securityName") or ""
+    ).lower()
+
+
 def _extract_isin(profile: dict) -> str | None:
     """Best-effort ISIN lookup: the original scraper never extracted ISIN at
     all (it wasn't in the field list it read from /api/profile/{ticker}), so
@@ -785,6 +809,16 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
         if not (b.get("number_of_trades_today") or 0):
             quality_flags.append("no_trades_today")
 
+        bond_kind = _aix_bond_kind(profile)
+        if bond_kind == "Сукук" and not coupon_rate_val:
+            quality_flags.append("sukuk_no_rate")
+            duration_result = {
+                **duration_result,
+                "ytm": None,
+                "macaulay_duration": None,
+                "modified_duration": None,
+            }
+
         rows.append(
             {
                 "exchange": "AIX",
@@ -793,6 +827,8 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
                 "currency": b["currency"],
                 "issuer": merged["issuer"] or None,
                 "instrument_type": duration_result["bond_type"],
+                "bond_kind": bond_kind,
+                "is_perpetual": _is_perpetual(profile, b["ticker"]),
                 "market_segment": b["instrument_category"],
                 "face_value": face_value_val,
                 "face_currency": face_currency_val,

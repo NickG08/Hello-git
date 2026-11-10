@@ -16,7 +16,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 
 from kzbonds import config
 
@@ -47,8 +47,34 @@ def save_snapshot(df: pd.DataFrame) -> str:
     ).dt.strftime("%Y-%m-%d")
 
     engine = get_engine()
+    _add_missing_columns(engine, out)
     out.to_sql(TABLE, engine, if_exists="append", index=False)
     return run_id
+
+
+def _sql_type(series: pd.Series) -> str:
+    if pd.api.types.is_bool_dtype(series):
+        return "BOOLEAN"
+    if pd.api.types.is_integer_dtype(series):
+        return "BIGINT"
+    if pd.api.types.is_float_dtype(series):
+        return "FLOAT"
+    return "TEXT"
+
+
+def _add_missing_columns(engine, df: pd.DataFrame) -> None:
+    # to_sql(append) never alters an existing table, so a column added to the
+    # unified schema would otherwise make every later save fail.
+    insp = inspect(engine)
+    if not insp.has_table(TABLE):
+        return
+    existing = {c["name"] for c in insp.get_columns(TABLE)}
+    missing = [c for c in df.columns if c not in existing]
+    if not missing:
+        return
+    with engine.begin() as conn:
+        for col in missing:
+            conn.execute(text(f'ALTER TABLE {TABLE} ADD COLUMN "{col}" {_sql_type(df[col])}'))
 
 
 def latest_run_id() -> str | None:

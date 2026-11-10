@@ -30,6 +30,8 @@ UNIFIED_COLUMNS = [
     "issuer",
     "currency",
     "instrument_type",
+    "bond_kind",
+    "is_perpetual",
     "market_segment",
     "face_value",
     "face_currency",
@@ -88,6 +90,10 @@ _FLAG_TO_QUALITY = {
     ),
     "not_currently_traded": ("ILLIQUID", "Бумага сейчас не в активном режиме торгов."),
     "no_trades_today": ("ILLIQUID", "Сегодня не было сделок по бумаге."),
+    "sukuk_no_rate": (
+        "NO_YTM",
+        "Сукук: доход выплачивается из прибыли актива, ставка в данных биржи не указана — YTM не рассчитывается.",
+    ),
     "no_coupon_rate": (
         "STALE_OR_ESTIMATED",
         "Купонная ставка не найдена ни в одном источнике.",

@@ -545,6 +545,30 @@ def _extract_characteristic_by_label(characteristics, label_search):
     return None
 
 
+def _kase_bond_kind(ticker_data: dict, characteristics: dict) -> str:
+    # ticker.typesec only knows coupon/discount/islamic; floating (indexed) issues
+    # show up solely in the characteristics' free-text bond name / rate kind.
+    typesec = (ticker_data.get("typesec_ru") or "").lower()
+    if ticker_data.get("typesec_en") == "discount" or "дисконт" in typesec:
+        return "Дисконтная"
+    if "ислам" in typesec:
+        return "Сукук"
+    name = (
+        _extract_characteristic_by_label(characteristics, "Наименование облигации") or ""
+    ).lower()
+    rate_kind = (
+        _extract_characteristic_by_label(characteristics, "Вид купонной ставки") or ""
+    ).lower()
+    if (
+        "индекс" in name
+        or "индекс" in rate_kind
+        or "плава" in rate_kind
+        or _extract_characteristic_by_label(characteristics, "маржа + индекс") is not None
+    ):
+        return "Купонная, плавающая ставка"
+    return "Купонная, фиксированная ставка"
+
+
 def _process_bond(
     bond: dict, settlement_date: date, all_characteristics: dict, all_boards: dict
 ) -> dict:
@@ -685,6 +709,10 @@ def _process_bond(
         "currency": currency,
         "issuer": emitter,
         "instrument_type": nbrk_view or bond_type,
+        "bond_kind": _kase_bond_kind(ticker_data, characteristics),
+        # Every live KASE bond reports "срочные"; "бессрочные" is the assumed
+        # counterpart, not yet seen in a live response.
+        "is_perpetual": (ticker_data.get("bond_type_ru") or "").lower().startswith("бессроч"),
         "market_segment": category or "unknown",
         "face_value": face_value,
         "face_currency": currency,
