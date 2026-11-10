@@ -545,6 +545,23 @@ def _extract_characteristic_by_label(characteristics, label_search):
     return None
 
 
+def _derive_maturity(ticker, bond_type_flag, characteristics) -> date | None:
+    # KASE leaves maturity blank on some issues placed directly on the exchange.
+    # Per their prospectuses circulation starts at the first placement trade,
+    # so start-of-circulation (or, failing that, trading open date) + term.
+    start = _parse_date(
+        _extract_characteristic_by_label(characteristics, "Дата начала обращения")
+    ) or _parse_date(_extract_characteristic_by_label(characteristics, "Дата открытия торгов"))
+    if not start:
+        return None
+    months = (_get_bond_main_api(ticker, bond_type_flag).get("characteristics") or {}).get(
+        "circulation_months"
+    )
+    if not months:
+        return None
+    return start + relativedelta(months=int(round(float(months))))
+
+
 def _kase_bond_kind(ticker_data: dict, characteristics: dict) -> str:
     # ticker.typesec only knows coupon/discount/islamic; floating (indexed) issues
     # show up solely in the characteristics' free-text bond name / rate kind.
@@ -666,6 +683,14 @@ def _process_bond(
                 quality_flags.append("html_fallback")
             if frequency == 2 and "frequency" in html_data:
                 frequency = html_data["frequency"]
+
+    if not maturity_date:
+        derived = _derive_maturity(ticker, bond_type_flag, characteristics)
+        if derived:
+            maturity_date = derived.isoformat()
+            quality_flags.append("maturity_derived")
+            if dtm is None:
+                dtm = (derived - settlement_date).days
 
     nkd_percent = _calculate_accrued_interest(
         coupon_rate, last_coupon_date, settlement_date, basis, frequency

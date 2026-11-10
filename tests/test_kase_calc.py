@@ -64,3 +64,28 @@ def test_coupon_bond_ytm_still_requires_a_coupon_free_price_move():
     )
     assert ytm is not None
     assert abs(ytm - 6.0) < 0.5
+
+
+def test_maturity_derived_from_trading_open_date_plus_term(monkeypatch):
+    # Live MFSCb7: KASE publishes no maturity or circulation start, only the
+    # trading open date (26.11.25) and an 18-month circulation term.
+    from kzbonds.sources import kase
+
+    monkeypatch.setattr(
+        kase, "_get_bond_main_api", lambda t, b: {"characteristics": {"circulation_months": 18.0}}
+    )
+    chars = {"596": {"label": "Дата открытия торгов", "value": "26.11.25"}}
+    assert kase._derive_maturity("MFSCb7", "corp", chars) == date(2027, 5, 26)
+
+
+def test_maturity_derivation_prefers_circulation_start(monkeypatch):
+    from kzbonds.sources import kase
+
+    monkeypatch.setattr(
+        kase, "_get_bond_main_api", lambda t, b: {"characteristics": {"circulation_months": 12}}
+    )
+    chars = {
+        "554": {"label": "Дата начала обращения", "value": "01.09.25"},
+        "596": {"label": "Дата открытия торгов", "value": "23.09.25"},
+    }
+    assert kase._derive_maturity("X", "corp", chars) == date(2026, 9, 1)
