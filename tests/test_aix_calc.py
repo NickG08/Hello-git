@@ -95,3 +95,13 @@ def test_last_trade_is_the_latest_day_with_turnover():
     assert _last_trade_in(history) == "2026-04-27"
     assert _last_trade_in([{"date": "2026-11-10T00:00:00Z", "close": 0, "volume": None}]) is None
     assert _last_trade_in(None) is None
+
+
+def test_price_is_todays_last_deal_when_the_bond_traded_today():
+    from kzbonds.sources.aix import _current_price
+
+    # SOLV1.0427 on 11.11.2026: reference price still the previous close.
+    assert _current_price(95.28, 99.99, 2) == 99.99
+    assert _current_price(95.28, 99.99, 0) == 95.28  # yesterday's deal: the close already is the reference price
+    assert _current_price(100, None, 0) == 100.0
+    assert _current_price("100%", None, None) == 100.0

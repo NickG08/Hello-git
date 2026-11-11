@@ -669,6 +669,19 @@ def _save_cache(cache: dict) -> None:
         pass
 
 
+def _current_price(reference_price, last_trade_price, trades_today) -> float | None:
+    """Today's last deal if the bond traded today, else AIX's reference price.
+
+    During the session the reference price is still the previous close, so a
+    bond dealt at 99.99 today kept showing yesterday's 95.28 (SOLV1.0427) and
+    a yield computed from it.
+    """
+    last = _parse_float_safe(last_trade_price)
+    if (trades_today or 0) > 0 and last and last > 0:
+        return last
+    return _parse_float_safe(reference_price)
+
+
 async def _get_bonds_from_market(session) -> list[dict]:
     bonds_list = []
     try:
@@ -696,6 +709,7 @@ async def _get_bonds_from_market(session) -> list[dict]:
                     "instrument_category": instrument,
                     "number_of_trades_today": item.get("numberOfTrades"),
                     "market_reference_price": item.get("referencePrice"),
+                    "last_trade_price": item.get("lastTrade"),
                 }
             )
     except Exception:
@@ -893,7 +907,9 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
         if profile is None:
             continue
 
-        market_price = _parse_float_safe(b["market_reference_price"])
+        market_price = _current_price(
+            b["market_reference_price"], b.get("last_trade_price"), b.get("number_of_trades_today")
+        )
         profile_price = _parse_float_safe(profile.get("referencePrice"))
         face_value_check = _parse_float_safe(profile.get("faceValue"))
 
