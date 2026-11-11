@@ -77,3 +77,11 @@ def test_perpetual_notes():
 
     assert "первый колл 03.11.2030" in _perpetual_note("FRTBS.PERP")
     assert _perpetual_note("XYZ.PERP") == "Бессрочная; дата погашения у биржи условная"
+
+
+def test_known_source_conflict_is_noted():
+    from kzbonds.sources.aix import _DATA_NOTES
+
+    # SKKZ.1126: the offer terms say 05.11.2026, AIX's profile says 05.09.2027.
+    assert "05.11.2026" in _DATA_NOTES["SKKZ.1126"] and "05.09.2027" in _DATA_NOTES["SKKZ.1126"]
+    assert "XYZ.0101" not in _DATA_NOTES

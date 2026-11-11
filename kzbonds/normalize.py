@@ -48,6 +48,7 @@ UNIFIED_COLUMNS = [
     "coupon_rate",
     "coupon_freq",
     "coupon_note",
+    "data_note",
     "day_count_basis",
     "last_coupon_date",
     "maturity_date",

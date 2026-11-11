@@ -573,6 +573,16 @@ _FORTEBANK_AT1 = (
 _PERPETUAL_NOTES = {"FRTB.PERP": _FORTEBANK_AT1, "FRTBS.PERP": _FORTEBANK_AT1}
 
 
+# Known conflicts between AIX data and the issuer's own documents. Each was
+# checked by hand; the date says when, because the sources can change.
+_DATA_NOTES = {
+    "SKKZ.1126": (
+        "В проспекте дата погашения 05.11.2026, AIX показывает 05.09.2027. "
+        "Сообщения о продлении срока не найдено (проверено 11.11.2026)."
+    ),
+}
+
+
 def _perpetual_note(ticker: str) -> str:
     return _PERPETUAL_NOTES.get(ticker, "Бессрочная; дата погашения у биржи условная")
 
@@ -1025,6 +1035,7 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
                     if _is_perpetual(profile, b["ticker"])
                     else aix_docs.coupon_note(dterms)
                 ),
+                "data_note": _DATA_NOTES.get(b["ticker"]),
                 "day_count_basis": year_basis_val,
                 "last_coupon_date": None,
                 "maturity_date": (
