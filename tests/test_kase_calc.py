@@ -105,3 +105,15 @@ def test_coupon_duration_never_exceeds_time_to_maturity():
     settlement, maturity = date(2026, 11, 10), date(2027, 2, 2)
     duration = _calculate_macaulay_duration(97.6, 11.0, settlement, maturity, 22.04, 2, 360)
     assert 0 < duration <= round(_days_30_360(settlement, maturity) / 360, 4)
+
+
+def test_nominal_is_read_from_values_that_carry_a_note():
+    from kzbonds.sources.kase import _leading_number
+
+    note = "(минимальный размер долга в номинальном выражении, доступный для торговли на KASE)"
+    assert _leading_number(f"1,00 {note}") == 1.0  # used to become 100
+    assert _leading_number(f"100 000,00 {note}") == 100000.0
+    assert _leading_number("1 000,00") == 1000.0
+    assert _leading_number("1 000,0") == 1000.0  # lot size
+    assert _leading_number("100,00") == 100.0
+    assert _leading_number(None) is None and _leading_number("—") is None

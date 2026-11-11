@@ -44,6 +44,7 @@ UNIFIED_COLUMNS = [
     "listing_category",
     "placement_type",
     "face_value",
+    "lot_size",
     "face_currency",
     "clean_price",
     "last_trade_date",

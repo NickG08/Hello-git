@@ -606,6 +606,19 @@ def _kase_bond_kind(ticker_data: dict, characteristics: dict) -> str:
     return "Купонная, фиксированная ставка"
 
 
+def _leading_number(text) -> float | None:
+    """The number a KASE characteristic starts with: '1 000,0' -> 1000.0.
+
+    KASE appends a note to some values ('1,00 (минимальный размер долга в
+    номинальном выражении, доступный для торговли на KASE)'); reading the whole
+    string as a number failed there and the nominal silently became 100.
+    """
+    m = re.match(r"\s*(\d[\d\s\u00a0]*(?:[.,]\d+)?)", str(text or ""))
+    if not m:
+        return None
+    return float(re.sub(r"[\s\u00a0]", "", m.group(1)).replace(",", "."))
+
+
 def _listing_board_and_category(characteristics) -> tuple[str | None, str | None]:
     """Board and category from KASE's "Список ценных бумаг" line, in KASE's own words.
 
@@ -673,13 +686,12 @@ def _process_bond(
     # some issues; label text unconfirmed against a live response, so this
     # is a best-effort lookup with the same 100 fallback the YTM/duration
     # math below already assumes (corp bonds are quoted per 100 of par).
-    face_value_raw = _extract_characteristic_by_label(characteristics, "Номинал")
-    try:
-        face_value = float(str(face_value_raw).replace(",", ".").replace(" ", ""))
-        if face_value <= 0:
-            face_value = 100.0
-    except (TypeError, ValueError):
+    face_value = _leading_number(_extract_characteristic_by_label(characteristics, "Номинал"))
+    if not face_value or face_value <= 0:
         face_value = 100.0
+    lot_size = _leading_number(
+        _extract_characteristic_by_label(characteristics, "Количество ценных бумаг в одном лоте")
+    )
 
     last_coupon_date_str = _extract_characteristic_value(
         characteristics, "coupon_prev_date"
@@ -794,6 +806,7 @@ def _process_bond(
         "placement_type": listing_board if listing_board == "частное размещение" else None,
         "listing_category": listing_category,
         "face_value": face_value,
+        "lot_size": lot_size,
         "face_currency": currency,
         "clean_price": round(clean_price, 4) if clean_price else None,
         "accrued_interest": nkd_percent,
