@@ -64,3 +64,23 @@ def test_new_column_is_added_to_existing_table(tmp_path):
     new.to_sql(db.TABLE, engine, if_exists="append", index=False)
     cols = {c["name"] for c in inspect(engine).get_columns(db.TABLE)}
     assert {"bond_kind", "is_perpetual"} <= cols
+
+
+def test_kase_listing_board_and_category_keep_the_exchange_wording():
+    from kzbonds.sources.kase import _listing_board_and_category
+
+    def chars(value):
+        return {"576": {"label": "Список ценных бумаг", "value": value}}
+
+    assert _listing_board_and_category(chars('официальный, основная площадка, категория "облигации"')) == (
+        "основная",
+        "облигации",
+    )
+    assert _listing_board_and_category(
+        chars('официальный, смешанная площадка, категория "государственные ценные бумаги"')
+    ) == ("смешанная", "государственные ценные бумаги")
+    assert _listing_board_and_category(chars("официальный, частное размещение площадка")) == (
+        "частное размещение",
+        None,
+    )
+    assert _listing_board_and_category({}) == (None, None)

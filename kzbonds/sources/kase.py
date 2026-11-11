@@ -606,6 +606,17 @@ def _kase_bond_kind(ticker_data: dict, characteristics: dict) -> str:
     return "Купонная, фиксированная ставка"
 
 
+def _listing_board_and_category(characteristics) -> tuple[str | None, str | None]:
+    """Board and category from KASE's "Список ценных бумаг" line, in KASE's own words.
+
+    'официальный, основная площадка, категория "облигации"' -> ("основная", "облигации");
+    'официальный, частное размещение площадка' -> ("частное размещение", None).
+    """
+    text = _extract_characteristic_by_label(characteristics, "Список ценных бумаг") or ""
+    m = re.search(r",\s*(.+?)\s+площадка(?:,\s*категория\s*\"(.+?)\")?\s*$", text)
+    return (m.group(1), m.group(2)) if m else (None, None)
+
+
 def _process_bond(
     bond: dict,
     settlement_date: date,
@@ -656,6 +667,7 @@ def _process_bond(
     characteristics = all_characteristics.get(ticker, {})
     trading_regime = _format_trading_regime((all_boards or {}).get(ticker, {}))
     isin = _extract_characteristic_by_label(characteristics, "ISIN")
+    listing_board, listing_category = _listing_board_and_category(characteristics)
 
     # KASE's characteristics API exposes a nominal-value label on at least
     # some issues; label text unconfirmed against a live response, so this
@@ -772,6 +784,8 @@ def _process_bond(
         # counterpart, not yet seen in a live response.
         "is_perpetual": (ticker_data.get("bond_type_ru") or "").lower().startswith("бессроч"),
         "market_segment": category or "unknown",
+        "listing_board": listing_board,
+        "listing_category": listing_category,
         "face_value": face_value,
         "face_currency": currency,
         "clean_price": round(clean_price, 4) if clean_price else None,

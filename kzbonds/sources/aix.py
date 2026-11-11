@@ -707,6 +707,7 @@ async def _get_bonds_from_market(session) -> list[dict]:
                     "ticker": ticker,
                     "currency": currency,
                     "instrument_category": instrument,
+                    "segment": (item.get("segment") or "").strip() or None,
                     "number_of_trades_today": item.get("numberOfTrades"),
                     "market_reference_price": item.get("referencePrice"),
                     "last_trade_price": item.get("lastTrade"),
@@ -1039,6 +1040,9 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
                 "bond_kind": bond_kind,
                 "is_perpetual": _is_perpetual(profile, b["ticker"]),
                 "market_segment": b["instrument_category"],
+                # Section of the list and category as the exchange names them (AIX: in English).
+                "listing_board": b.get("segment"),
+                "listing_category": b["instrument_category"],
                 "face_value": face_value_val,
                 "face_currency": face_currency_val,
                 "clean_price": clean_price,

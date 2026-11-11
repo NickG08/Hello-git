@@ -38,6 +38,8 @@ UNIFIED_COLUMNS = [
     "bond_kind",
     "is_perpetual",
     "market_segment",
+    "listing_board",
+    "listing_category",
     "face_value",
     "face_currency",
     "clean_price",
