@@ -789,6 +789,9 @@ def _process_bond(
         "listing_list": ticker_data.get("securities_list_ru") or None,
         "listing_board": listing_board,
         "listing_sector": bond.get("fin_sec_ru") or None,
+        # Only stated where the exchange states it: KASE marks a private placement
+        # by its board; nothing else in its data says how an issue was placed.
+        "placement_type": listing_board if listing_board == "частное размещение" else None,
         "listing_category": listing_category,
         "face_value": face_value,
         "face_currency": currency,

@@ -42,6 +42,7 @@ UNIFIED_COLUMNS = [
     "listing_board",
     "listing_sector",
     "listing_category",
+    "placement_type",
     "face_value",
     "face_currency",
     "clean_price",
