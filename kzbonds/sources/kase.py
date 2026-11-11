@@ -784,7 +784,11 @@ def _process_bond(
         # counterpart, not yet seen in a live response.
         "is_perpetual": (ticker_data.get("bond_type_ru") or "").lower().startswith("бессроч"),
         "market_segment": category or "unknown",
+        # The four levels of KASE's official-list structure, in KASE's wording:
+        # list -> board -> sector -> category.
+        "listing_list": ticker_data.get("securities_list_ru") or None,
         "listing_board": listing_board,
+        "listing_sector": bond.get("fin_sec_ru") or None,
         "listing_category": listing_category,
         "face_value": face_value,
         "face_currency": currency,
