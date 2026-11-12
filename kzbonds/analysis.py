@@ -3,9 +3,9 @@ Generates the note shown in the dashboard: the highest yields per currency,
 recomputed from the latest snapshot on every pipeline run (never hand-written
 or hardcoded numbers).
 
-Only bonds with price_quality == 'OK' are listed, so a stale price, a
-reference price nobody dealt at, or a fallback value cannot put a bond at the
-top of the list.
+The list is drawn from every bond whose YTM the table shows. normalize()
+already blanks the YTM of a bond whose last deal is too old or that never
+traded, so the note and the table follow one rule on both exchanges.
 """
 
 from __future__ import annotations
@@ -24,28 +24,21 @@ def generate_note(df: pd.DataFrame) -> str:
         now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
         return f"# KZ Bond Monitor — аналитическая записка\n\n_{now}_\n\nДанных нет (пайплайн ещё не запускался)."
 
-    clean = df[df["price_quality"] == "OK"].dropna(
-        subset=["ytm", "modified_duration", "currency"]
-    )
+    with_ytm = df.dropna(subset=["ytm", "currency"])
 
-    lines = ["## Топ доходностей среди надёжных цен (по валютам)"]
-    if clean.empty:
+    lines = ["## Топ доходностей по валютам"]
+    if with_ytm.empty:
         lines.append("")
-        lines.append("Бумаг с надёжной ценой и YTM в этом снапшоте нет.")
+        lines.append("Бумаг с YTM в этом снапшоте нет.")
         return "\n".join(lines)
 
-    for currency, group in clean.groupby("currency"):
+    for currency, group in with_ytm.groupby("currency"):
         top = group.sort_values("ytm", ascending=False).head(TOP_PER_CURRENCY)
         lines.append(f"\n**{currency}:**")
         for _, r in top.iterrows():
-            mat = (
-                r["maturity_date"].strftime("%Y-%m-%d")
-                if pd.notna(r["maturity_date"])
-                else "—"
-            )
-            lines.append(
-                f"- {r['exchange']} {r['ticker']} — YTM {r['ytm']:.2f}%, дюрация {r['modified_duration']:.2f}л, погашение {mat}"
-            )
+            mat = r["maturity_date"].strftime("%Y-%m-%d") if pd.notna(r["maturity_date"]) else "—"
+            duration = f"{r['modified_duration']:.2f}л" if pd.notna(r["modified_duration"]) else "—"
+            lines.append(f"- {r['exchange']} {r['ticker']} — YTM {r['ytm']:.2f}%, дюрация {duration}, погашение {mat}")
 
     return "\n".join(lines)
 
