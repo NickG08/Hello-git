@@ -201,7 +201,7 @@
       <div class="sub">KASE + AIX · валютные облигации</div>
     </div>
     <div class="headright">
-      <div class="status"><span class="dot"></span>снапшот от <span class="num">__GENERATED_AT__</span></div>
+      <div class="status"><span class="dot"></span>снапшот от <span class="num" data-utc="__GENERATED_ISO__">__GENERATED_AT__</span></div>
       <div class="themebtns">
         <button class="active" onclick="setTheme(null,this)">Системная</button>
         <button onclick="setTheme('light',this)">Светлая</button>
@@ -242,7 +242,7 @@
     </div>
   </div>
 
-  <footer class="note">KZ Bond Monitor · экспорт снапшота __GENERATED_AT__ (run_id __RUN_ID__) · KASE + AIX, без гарантии SLA источников</footer>
+  <footer class="note">KZ Bond Monitor · экспорт снапшота <span data-utc="__GENERATED_ISO__">__GENERATED_AT__</span> (run_id __RUN_ID__) · KASE + AIX, без гарантии SLA источников</footer>
 </div>
 
 <script>
@@ -525,6 +525,22 @@ function render(){
   renderTable(rows);
   renderScatter(rows);
 }
+
+// Snapshot time in the viewer's own time zone, e.g. "2026-11-12 17:07 (UTC+3)".
+// The page is built with the UTC time, which stays if this cannot run.
+function localStamp(iso){
+  const d = new Date(iso);
+  if (isNaN(d)) return null;
+  const p = n => String(n).padStart(2, '0');
+  const off = -d.getTimezoneOffset();
+  const h = Math.floor(Math.abs(off) / 60), m = Math.abs(off) % 60;
+  const zone = off === 0 ? 'UTC' : `UTC${off > 0 ? '+' : '−'}${h}${m ? ':' + p(m) : ''}`;
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())} (${zone})`;
+}
+document.querySelectorAll('[data-utc]').forEach(el => {
+  const text = localStamp(el.dataset.utc);
+  if (text) el.textContent = text;
+});
 
 renderFilters();
 render();

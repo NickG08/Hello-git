@@ -97,9 +97,21 @@ def snapshot_records(df: pd.DataFrame) -> list[dict]:
     return records
 
 
-def _generated_at(df: pd.DataFrame) -> str:
+def _snapshot_time(df: pd.DataFrame) -> pd.Timestamp | None:
     stamp = pd.to_datetime(df["fetched_at"], errors="coerce", utc=True).max()
-    return stamp.strftime("%Y-%m-%d %H:%M UTC") if pd.notna(stamp) else "—"
+    return stamp if pd.notna(stamp) else None
+
+
+def _generated_at(df: pd.DataFrame) -> str:
+    """Shown as is when the page script cannot convert it to local time."""
+    stamp = _snapshot_time(df)
+    return stamp.strftime("%Y-%m-%d %H:%M UTC") if stamp is not None else "—"
+
+
+def _generated_iso(df: pd.DataFrame) -> str:
+    """Read by the page script, which shows it in the viewer's time zone."""
+    stamp = _snapshot_time(df)
+    return stamp.strftime("%Y-%m-%dT%H:%M:%SZ") if stamp is not None else ""
 
 
 def _script_json(value) -> str:
@@ -120,6 +132,7 @@ def render(df: pd.DataFrame, mode: str = "site") -> str:
         .replace("__NOTE_JSON__", _script_json(analysis.generate_note(df)))
         .replace("__RUN_ID__", str(df["run_id"].iloc[0]))
         .replace("__GENERATED_AT__", _generated_at(df))
+        .replace("__GENERATED_ISO__", _generated_iso(df))
     )
     if mode == "artifact":
         return page

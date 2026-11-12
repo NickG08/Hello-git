@@ -62,6 +62,8 @@ def test_page_fills_in_every_placeholder():
     page = site.render(_snapshot(), mode="site")
     assert "__" not in page.replace("__proto__", "")
     assert "снапшот от" in page and "2026-11-12 06:55 UTC" in page
+    # Both places that show the time carry it for the script to convert.
+    assert page.count('data-utc="2026-11-12T06:55:02Z"') == 2
     assert "run_id abc123" in page
     assert _bonds_in(page)[0]["ticker"] == "TEST1"
     assert "Топ доходностей по валютам" in page
