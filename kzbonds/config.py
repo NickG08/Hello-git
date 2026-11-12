@@ -46,11 +46,16 @@ NOTE_MIN_DAYS_TO_MATURITY = int(os.getenv("KZBONDS_NOTE_MIN_DAYS_TO_MATURITY", "
 ANALYSIS_NOTE_PATH = DATA_DIR / "latest_note.md"
 
 # When kzbonds.scheduler refreshes the data: these times, Monday to Friday,
-# in SCHEDULE_TZ. KASE trades bonds 11:20-17:30 and AIX 11:30-17:05 Astana
-# time; the last two runs pick up each exchange's closing numbers.
+# in SCHEDULE_TZ (Astana time).
+#   10:45  KASE opens direct deals at 10:30; nothing trades before that.
+#   11:40  both exchanges hold their opening auction at 11:30, and KASE
+#          publishes in batches every 3-6 minutes.
+#   hourly through the session.
+#   17:30  AIX closes at 17:05 and updates its reference prices by 17:20.
+#   17:50  KASE closes at 17:30; its last changes arrived at 17:39 when measured.
 SCHEDULE_TZ = os.getenv("KZBONDS_SCHEDULE_TZ", "Asia/Almaty")
 SCHEDULE_TIMES = os.getenv(
-    "KZBONDS_SCHEDULE_TIMES", "11:45,12:45,13:45,14:45,15:45,16:45,17:30,17:50"
+    "KZBONDS_SCHEDULE_TIMES", "10:45,11:40,12:45,13:45,14:45,15:45,16:45,17:30,17:50"
 )
 
 # The page kzbonds.site builds and kzbonds.serve hands out.
