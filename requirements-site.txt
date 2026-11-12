@@ -1,0 +1,12 @@
+# What the public service needs (kzbonds.serve). The dashboard in app.py and
+# the development tools are in requirements.txt.
+pandas>=2.0
+numpy
+scipy
+aiohttp
+requests
+python-dateutil
+holidays
+SQLAlchemy>=2.0
+python-dotenv
+tzdata
