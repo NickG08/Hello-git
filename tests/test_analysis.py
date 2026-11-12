@@ -4,7 +4,7 @@ from kzbonds.analysis import generate_note
 from kzbonds.normalize import combine
 
 
-def _bond(exchange, ticker, ytm, duration, currency="USD", quality_flags=None, last_trade="today"):
+def _bond(exchange, ticker, ytm, duration, currency="USD", quality_flags=None, last_trade="today", days=1000):
     return {
         "exchange": exchange,
         "ticker": ticker,
@@ -21,8 +21,8 @@ def _bond(exchange, ticker, ytm, duration, currency="USD", quality_flags=None, l
         "coupon_freq": 2,
         "day_count_basis": 360,
         "last_coupon_date": None,
-        "maturity_date": "2029-01-01",
-        "days_to_maturity": 1000,
+        "maturity_date": "2029-01-01" if days is not None else None,
+        "days_to_maturity": days,
         "ytm": ytm,
         "ytm_exchange_reported": ytm,
         "ytm_total_return_reported": None,
@@ -93,6 +93,24 @@ def test_note_leaves_out_bonds_whose_ytm_the_table_hides():
     note = generate_note(combine(pd.DataFrame(rows), pd.DataFrame()))
     assert "K_OLD" not in note and "A_NEVER" not in note
     assert "K2" in note
+
+
+def test_note_leaves_out_bonds_close_to_maturity():
+    rows = [
+        _bond("AIX", "A_34D", ytm=73.5, duration=0.07, days=34),
+        _bond("KASE", "K_89D", ytm=22.0, duration=0.2, days=89),
+        _bond("KASE", "K_90D", ytm=9.0, duration=0.25, days=90),
+        _bond("KASE", "K_LONG", ytm=6.0, duration=2.0),
+    ]
+    note = generate_note(combine(pd.DataFrame(rows), pd.DataFrame()))
+    assert "A_34D" not in note and "K_89D" not in note
+    assert note.index("K_90D") < note.index("K_LONG")
+
+
+def test_note_keeps_perpetual_bonds():
+    rows = [_bond("KASE", "K_PERP", ytm=8.0, duration=10.0, days=None)]
+    note = generate_note(combine(pd.DataFrame(rows), pd.DataFrame()))
+    assert "K_PERP" in note
 
 
 def test_note_says_so_when_no_bond_has_a_ytm():

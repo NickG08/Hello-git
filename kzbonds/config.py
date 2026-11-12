@@ -38,4 +38,9 @@ PIPELINE_INTERVAL_HOURS = float(os.getenv("KZBONDS_PIPELINE_INTERVAL_HOURS", "6"
 # the error reaches whole points, and bonds close to maturity blow up.
 YTM_MAX_PRICE_AGE_DAYS = int(os.getenv("KZBONDS_YTM_MAX_PRICE_AGE_DAYS", "30"))
 
+# The note's top-yields list leaves out bonds closer to maturity than this. A
+# price a few weeks old, annualised over the few weeks left, gives a yield of
+# tens of percent that nobody can actually earn. The table still shows them.
+NOTE_MIN_DAYS_TO_MATURITY = int(os.getenv("KZBONDS_NOTE_MIN_DAYS_TO_MATURITY", "90"))
+
 ANALYSIS_NOTE_PATH = DATA_DIR / "latest_note.md"

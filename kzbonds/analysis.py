@@ -6,6 +6,10 @@ or hardcoded numbers).
 The list is drawn from every bond whose YTM the table shows. normalize()
 already blanks the YTM of a bond whose last deal is too old or that never
 traded, so the note and the table follow one rule on both exchanges.
+
+Bonds closer to maturity than config.NOTE_MIN_DAYS_TO_MATURITY are left out of
+the list (the table keeps them): their yield is an old price annualised over a
+few weeks. Perpetual bonds have no maturity and stay in.
 """
 
 from __future__ import annotations
@@ -25,6 +29,8 @@ def generate_note(df: pd.DataFrame) -> str:
         return f"# KZ Bond Monitor — аналитическая записка\n\n_{now}_\n\nДанных нет (пайплайн ещё не запускался)."
 
     with_ytm = df.dropna(subset=["ytm", "currency"])
+    near_maturity = with_ytm["days_to_maturity"] < config.NOTE_MIN_DAYS_TO_MATURITY
+    with_ytm = with_ytm[~near_maturity]
 
     lines = ["## Топ доходностей по валютам"]
     if with_ytm.empty:
