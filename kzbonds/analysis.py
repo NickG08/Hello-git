@@ -38,6 +38,13 @@ def generate_note(df: pd.DataFrame) -> str:
         lines.append("Бумаг с YTM в этом снапшоте нет.")
         return "\n".join(lines)
 
+    lines.append("")
+    lines.append(
+        f"В список не входят бумаги, до погашения которых меньше {config.NOTE_MIN_DAYS_TO_MATURITY} дней: "
+        "на таком коротком сроке доходность сильно зависит от давности последней сделки. "
+        "В таблице эти бумаги показаны."
+    )
+
     for currency, group in with_ytm.groupby("currency"):
         top = group.sort_values("ytm", ascending=False).head(TOP_PER_CURRENCY)
         lines.append(f"\n**{currency}:**")

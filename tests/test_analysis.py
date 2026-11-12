@@ -104,6 +104,7 @@ def test_note_leaves_out_bonds_close_to_maturity():
     ]
     note = generate_note(combine(pd.DataFrame(rows), pd.DataFrame()))
     assert "A_34D" not in note and "K_89D" not in note
+    assert "В список не входят бумаги, до погашения которых меньше 90 дней" in note
     assert note.index("K_90D") < note.index("K_LONG")
 
 
