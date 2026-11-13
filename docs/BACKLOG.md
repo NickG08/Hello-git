@@ -135,7 +135,10 @@
   - карточки: `card_table`, `card_chart`, `card_search` (строка открыта при тексте в поиске);
   - выбор фильтра — по значению: `filter_exchange_{kase,aix}`, `filter_currency_{usd,cny,eur,rub,aed,other}`,
     `filter_type_{fixed,discount,floating,sukuk,capitalization,other}`,
-    `filter_maturity_{lt1,1_3,3_5,5plus,perpetual,nodate}`; снятие (крестик или отжатие) — `filter_clear`;
+    `filter_maturity_{lt1,1_3,3_5,5plus,perpetual,nodate}`; снятие (крестик или отжатие) — `filter_clear`.
+    Цель `filter_maturity_nodate` в Метрике решено не заводить (13.11.2026): бумаг без даты погашения
+    сейчас нет, пайплайн рассчитывает дату сам; страница её отправляет, но в отчёт по целям она не попадёт.
+    `filter_currency_other` и `filter_type_other` оставлены как страховка и сигнал о новом значении;
   - `search`, `search_empty` (0 строк), `sort`, `reset_filters`;
   - `filter_combo` — комбинация из двух значений и больше, когда посетитель закончил с фильтрами
     (следующее действие, 5 с без кликов по фильтрам, закрытие страницы); порядок блоков и значений
