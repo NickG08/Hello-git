@@ -78,21 +78,27 @@ _DOCUMENT = """<!doctype html>
 </html>
 """
 
-# Yandex Metrika counter, the loader Yandex publishes. The page script reads
-# window.KZB_METRIKA_ID to send its goals (JS events) with ym(..., 'reachGoal').
-_METRIKA_HEAD = """<script>
-window.KZB_METRIKA_ID = {id};
-(function(m,e,t,r,i,k,a){{m[i]=m[i]||function(){{(m[i].a=m[i].a||[]).push(arguments)}};
-m[i].l=1*new Date();
-for (var j = 0; j < document.scripts.length; j++) {{if (document.scripts[j].src === r) {{ return; }}}}
-k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)}})
-(window, document, "script", "https://mc.yandex.ru/metrika/tag.js", "ym");
-ym({id}, "init", {{clickmap:true, trackLinks:true, accurateTrackBounce:true, webvisor:true}});
+# Yandex Metrika counter: the code Metrika gives for the counter (as of
+# 13.11.2026), with only the number filled in. Yandex's terms forbid changing
+# it beyond the site's own parameters. The page script reads
+# window.KZB_METRIKA_ID to send its goals with ym(..., 'reachGoal').
+_METRIKA_HEAD = """<script>window.KZB_METRIKA_ID = {id};</script>
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+    (function(m,e,t,r,i,k,a){{
+        m[i]=m[i]||function(){{(m[i].a=m[i].a||[]).push(arguments)}};
+        m[i].l=1*new Date();
+        for (var j = 0; j < document.scripts.length; j++) {{if (document.scripts[j].src === r) {{ return; }}}}
+        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+    }})(window, document,'script','https://mc.yandex.ru/metrika/tag.js?id={id}', 'ym');
+
+    ym({id}, 'init', {{ssr:true, webvisor:true, clickmap:true, ecommerce:"dataLayer", referrer: document.referrer, url: location.href, accurateTrackBounce:true, trackLinks:true}});
 </script>
+<!-- /Yandex.Metrika counter -->
 """
 _METRIKA_BODY = (
     '<noscript><div><img src="https://mc.yandex.ru/watch/{id}" '
-    'style="position:absolute; left:-9999px;" alt=""></div></noscript>\n'
+    'style="position:absolute; left:-9999px;" alt="" /></div></noscript>\n'
 )
 
 

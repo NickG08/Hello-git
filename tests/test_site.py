@@ -99,7 +99,8 @@ def test_metrika_counter_goes_only_into_the_site_page(monkeypatch):
     full = site.render(_snapshot(), mode="site")
     fragment = site.render(_snapshot(), mode="artifact")
     assert "window.KZB_METRIKA_ID = 12345678;" in full
-    assert 'ym(12345678, "init"' in full and "webvisor:true" in full
+    assert "ym(12345678, 'init'" in full and "webvisor:true" in full
+    assert "https://mc.yandex.ru/metrika/tag.js?id=12345678" in full
     assert "https://mc.yandex.ru/watch/12345678" in full
     # The loader sits in <head>, the fallback image right after <body>.
     assert full.index("mc.yandex.ru/metrika/tag.js") < full.index("</head>")
