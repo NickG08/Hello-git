@@ -711,11 +711,12 @@ document.querySelectorAll('[data-utc]').forEach(el => {
 
 // Next scheduled refresh in the viewer's time zone: "13:45", "завтра 10:45",
 // "пн 10:45". Only the site carries the schedule (window.KZB_NEXT_RUNS, UTC);
-// the artifact has none, so the line stays hidden there.
+// the artifact has none, so the line stays hidden there. The line is updated
+// once that run time comes, and again when the visitor returns to the tab
+// (browsers hold back timers in background tabs and on sleeping laptops).
 const WEEKDAYS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
-function nextRunText(now){
-  const next = (window.KZB_NEXT_RUNS || []).map(s => new Date(s)).find(d => d > now);
-  if (!next) return null;
+let nextRunTimer = null;
+function nextRunText(next, now){
   const p = n => String(n).padStart(2, '0');
   const hm = `${p(next.getHours())}:${p(next.getMinutes())}`;
   const day = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
@@ -725,13 +726,17 @@ function nextRunText(now){
   return WEEKDAYS[next.getDay()] + ' ' + hm;
 }
 function showNextRun(){
+  clearTimeout(nextRunTimer);
+  const now = new Date();
+  const next = (window.KZB_NEXT_RUNS || []).map(s => new Date(s)).find(d => d > now);
   const box = document.querySelector('.nextrun');
-  const text = nextRunText(new Date());
-  box.hidden = !text;
-  if (text) document.getElementById('nextrun').textContent = text;
+  box.hidden = !next;
+  if (!next) return;
+  document.getElementById('nextrun').textContent = nextRunText(next, now);
+  nextRunTimer = setTimeout(showNextRun, Math.min(next - now + 1000, 2147483647));
 }
 showNextRun();
-setInterval(showNextRun, 60000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') showNextRun(); });
 
 renderFilters();
 render();
