@@ -54,9 +54,12 @@ ANALYSIS_NOTE_PATH = DATA_DIR / "latest_note.md"
 #   17:30  AIX closes at 17:05 and updates its reference prices by 17:20.
 #   17:50  KASE closes at 17:30; its last changes arrived at 17:39 when measured.
 SCHEDULE_TZ = os.getenv("KZBONDS_SCHEDULE_TZ", "Asia/Almaty")
-SCHEDULE_TIMES = os.getenv(
-    "KZBONDS_SCHEDULE_TIMES", "10:45,11:40,12:45,13:45,14:45,15:45,16:45,17:30,17:50"
-)
+SCHEDULE_TIMES = os.getenv("KZBONDS_SCHEDULE_TIMES", "10:45,11:40,12:45,13:45,14:45,15:45,16:45,17:30,17:50")
+
+# Yandex Metrika counter number for the public page. Empty means no analytics.
+# Set it in the hosting environment (Amvera "Переменные"); the artifact
+# version of the page never carries the counter.
+METRIKA_ID = os.getenv("KZBONDS_METRIKA_ID", "")
 
 # The page kzbonds.site builds and kzbonds.serve hands out.
 SITE_INDEX_PATH = DATA_DIR / "site" / "index.html"

@@ -92,3 +92,29 @@ def test_render_refuses_an_empty_snapshot_and_an_unknown_mode():
         site.render(pd.DataFrame(), mode="site")
     with pytest.raises(ValueError):
         site.render(_snapshot(), mode="email")
+
+
+def test_metrika_counter_goes_only_into_the_site_page(monkeypatch):
+    monkeypatch.setattr(site.config, "METRIKA_ID", "12345678")
+    full = site.render(_snapshot(), mode="site")
+    fragment = site.render(_snapshot(), mode="artifact")
+    assert "window.KZB_METRIKA_ID = 12345678;" in full
+    assert 'ym(12345678, "init"' in full and "webvisor:true" in full
+    assert "https://mc.yandex.ru/watch/12345678" in full
+    # The loader sits in <head>, the fallback image right after <body>.
+    assert full.index("mc.yandex.ru/metrika/tag.js") < full.index("</head>")
+    assert full.index("<body>") < full.index("mc.yandex.ru/watch/")
+    assert "mc.yandex.ru" not in fragment and "KZB_METRIKA_ID = " not in fragment
+
+
+def test_no_counter_number_means_no_metrika(monkeypatch):
+    for value in ("", "  ", "abc123"):
+        monkeypatch.setattr(site.config, "METRIKA_ID", value)
+        page = site.render(_snapshot(), mode="site")
+        assert "mc.yandex.ru" not in page and "KZB_METRIKA_ID = " not in page
+
+
+def test_page_script_sends_every_agreed_goal():
+    page = site.render(_snapshot(), mode="site")
+    for goal in ("tab_open", "card_open", "filter_click", "search", "sort", "reset_filters"):
+        assert f"'{goal}'" in page

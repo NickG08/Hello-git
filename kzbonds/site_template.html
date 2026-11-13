@@ -215,9 +215,9 @@
   <div class="layout">
     <div>
       <div class="tabs">
-        <button class="tab active" onclick="setTab(0,this)">Таблица</button>
-        <button class="tab" onclick="setTab(1,this)">YTM / Дюрация</button>
-        <button class="tab" onclick="setTab(2,this)">Записка</button>
+        <button class="tab active" onclick="openTab(0,this)">Таблица</button>
+        <button class="tab" onclick="openTab(1,this)">YTM / Дюрация</button>
+        <button class="tab" onclick="openTab(2,this)">Записка</button>
         <div class="tabtools" id="filters"></div>
       </div>
 
@@ -289,9 +289,9 @@ function fmtInt(v){ return (v===null||v===undefined) ? '—' : Math.round(v).toL
 function renderFilters(){
   document.getElementById('filters').innerHTML = `
     <input class="searchbox" id="f-search" type="search" aria-label="Поиск" placeholder="Поиск: тикер, эмитент, ISIN…">
-    <button class="resetbtn" onclick="location.reload()">Сбросить фильтры</button>
+    <button class="resetbtn" onclick="resetAll()">Сбросить фильтры</button>
   `;
-  document.getElementById('f-search').oninput = e => { state.search = e.target.value; render(); };
+  document.getElementById('f-search').oninput = e => { state.search = e.target.value; render(); trackSearch(e.target.value); };
 }
 function toggleSet(set, v, on){ if(on) set.add(v); else set.delete(v); }
 
@@ -333,12 +333,18 @@ function renderKpis(rows){
 }
 function onKpiActivate(e){
   const r = e.target.closest('[data-reset]');
-  if(r){ state.kpi[r.dataset.reset].clear(); render(); return; }
+  if(r){
+    state.kpi[r.dataset.reset].clear(); render();
+    track('filter_click', {filter: FILTER_NAMES[r.dataset.reset], value: 'сбросить', action: 'сброс'});
+    return;
+  }
   const k = e.target.closest('.kf');
   if(!k) return;
   const set = state.kpi[k.dataset.dim], v = k.dataset.val;
-  if(set.has(v)) set.delete(v); else set.add(v);
+  const on = !set.has(v);
+  if(on) set.add(v); else set.delete(v);
   render();
+  track('filter_click', {filter: FILTER_NAMES[k.dataset.dim], value: v, action: on ? 'вкл' : 'выкл'});
 }
 document.getElementById('kpis').addEventListener('click', onKpiActivate);
 document.getElementById('kpis').addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); onKpiActivate(e); } });
@@ -358,6 +364,8 @@ function renderTableHead(){
 function sortBy(k){
   if(state.sortKey===k) state.sortDir *= -1; else { state.sortKey=k; state.sortDir=-1; }
   render();
+  const col = COLS.find(c => c.k === k);
+  track('sort', {column: col ? col.label : k, direction: state.sortDir > 0 ? 'по возрастанию' : 'по убыванию'});
 }
 
 function renderTable(rows){
@@ -440,9 +448,14 @@ function placeCard(scroll){
   const r = d.getBoundingClientRect();
   if(r.bottom > window.innerHeight) window.scrollBy({ top: r.bottom - window.innerHeight + 12, behavior: 'smooth' });
 }
-function selectBond(ticker, keepOpen){
+function selectBond(ticker, keepOpen, source){
+  const wasOpen = state.selected === ticker;
   state.selected = (state.selected===ticker && !keepOpen) ? null : ticker;
   placeCard(true);
+  if (state.selected === ticker && !wasOpen) {
+    const b = BONDS.find(x => x.ticker === ticker);
+    track('card_open', {ticker, exchange: b ? b.exchange : null, source: source || 'таблица'});
+  }
 }
 
 function renderScatter(rows){
@@ -461,7 +474,7 @@ function renderScatter(rows){
   const xTicks = 6;
   for(let i=0;i<=xTicks;i++){ const v = xMax*i/xTicks; s += `<text x="${X(v).toFixed(1)}" y="${H-padB+14}">${v.toFixed(0)}л</text>`; }
   pts.forEach(p=>{
-    s += `<circle class="pt" cx="${X(p.modified_duration).toFixed(1)}" cy="${Y(p.ytm).toFixed(1)}" r="4" fill="${EXCH_COLOR[p.exchange]}" opacity="0.75" onclick="setTab(0, document.querySelectorAll('.tab')[0]); selectBond('${p.ticker.replace(/'/g,"\\'")}', true)"><title>${p.ticker} · YTM ${fmt(p.ytm)}% · дюр ${fmt(p.modified_duration)}л</title></circle>`;
+    s += `<circle class="pt" cx="${X(p.modified_duration).toFixed(1)}" cy="${Y(p.ytm).toFixed(1)}" r="4" fill="${EXCH_COLOR[p.exchange]}" opacity="0.75" onclick="setTab(0, document.querySelectorAll('.tab')[0]); selectBond('${p.ticker.replace(/'/g,"\\'")}', true, 'график')"><title>${p.ticker} · YTM ${fmt(p.ytm)}% · дюр ${fmt(p.modified_duration)}л</title></circle>`;
   });
   svg.innerHTML = s;
 }
@@ -507,6 +520,39 @@ function mdToHtml(md){
 
 function syncCardWidth(){ const w = document.querySelector('.tablewrap'); if(w && w.clientWidth) w.style.setProperty('--tw', w.clientWidth + 'px'); }
 window.addEventListener('resize', syncCardWidth);
+// --- Yandex Metrika goals (JS events) ---
+// The site build defines window.KZB_METRIKA_ID and the ym() loader. Elsewhere
+// (the artifact, a local file) track() does nothing.
+const FILTER_NAMES = {exchange: 'Биржа', currency: 'Валюта', kind: 'Тип', mat: 'Срок'};
+function track(goal, params, done){
+  let finished = false;
+  const finish = () => { if (!finished) { finished = true; if (done) done(); } };
+  try {
+    if (window.KZB_METRIKA_ID && typeof window.ym === 'function') {
+      window.ym(window.KZB_METRIKA_ID, 'reachGoal', goal, params || {}, finish);
+      if (done) setTimeout(finish, 500);  // do not wait for Metrika forever
+      return;
+    }
+  } catch (e) {}
+  finish();
+}
+let searchTimer = null, lastSearch = '';
+function trackSearch(text){
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    const q = text.trim().slice(0, 60);
+    if (q && q !== lastSearch) { lastSearch = q; track('search', {query: q}); }
+  }, 1500);
+}
+function openTab(i, btn){
+  const changed = !btn.classList.contains('active');
+  setTab(i, btn);
+  if (changed) track('tab_open', {tab: btn.textContent.trim()});
+}
+function resetAll(){
+  track('reset_filters', {}, () => location.reload());
+}
+
 function setTab(i, btn){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.tabpanel').forEach((p,idx)=>p.classList.toggle('active', idx===i));
