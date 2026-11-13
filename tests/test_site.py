@@ -116,5 +116,10 @@ def test_no_counter_number_means_no_metrika(monkeypatch):
 
 def test_page_script_sends_every_agreed_goal():
     page = site.render(_snapshot(), mode="site")
-    for goal in ("tab_open", "card_open", "filter_click", "search", "sort", "reset_filters"):
-        assert f"'{goal}'" in page
+    for goal in (
+        "tab_table", "tab_chart", "tab_note",
+        "card_table", "card_chart", "card_search",
+        "filter_exchange_", "filter_currency_", "filter_type_", "filter_maturity_", "filter_clear",
+        "search", "search_empty", "sort", "reset_filters",
+    ):
+        assert f"'{goal}" in page, goal

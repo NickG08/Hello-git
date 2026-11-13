@@ -291,7 +291,10 @@ function renderFilters(){
     <input class="searchbox" id="f-search" type="search" aria-label="Поиск" placeholder="Поиск: тикер, эмитент, ISIN…">
     <button class="resetbtn" onclick="resetAll()">Сбросить фильтры</button>
   `;
-  document.getElementById('f-search').oninput = e => { state.search = e.target.value; render(); trackSearch(e.target.value); };
+  const box = document.getElementById('f-search');
+  box.oninput = e => { const prev = state.search; state.search = e.target.value; render(); searchInput(prev, e.target.value); };
+  box.addEventListener('keydown', e => { if (e.key === 'Enter') commitSearch(); });
+  box.addEventListener('blur', () => commitSearch());
 }
 function toggleSet(set, v, on){ if(on) set.add(v); else set.delete(v); }
 
@@ -334,17 +337,21 @@ function renderKpis(rows){
 function onKpiActivate(e){
   const r = e.target.closest('[data-reset]');
   if(r){
+    commitSearch();
     state.kpi[r.dataset.reset].clear(); render();
-    track('filter_click', {filter: FILTER_NAMES[r.dataset.reset], value: 'сбросить', action: 'сброс'});
+    track('filter_clear', {'Снятие фильтра': {[FILTER_GOALS[r.dataset.reset].name]: 'крестик'}});
     return;
   }
   const k = e.target.closest('.kf');
   if(!k) return;
   const set = state.kpi[k.dataset.dim], v = k.dataset.val;
   const on = !set.has(v);
+  commitSearch();
   if(on) set.add(v); else set.delete(v);
   render();
-  track('filter_click', {filter: FILTER_NAMES[k.dataset.dim], value: v, action: on ? 'вкл' : 'выкл'});
+  const g = FILTER_GOALS[k.dataset.dim];
+  if (on) track(g.prefix + (g.values[v] || 'other'), {'Фильтр': {[g.name]: v}});
+  else track('filter_clear', {'Снятие фильтра': {[g.name]: v}});
 }
 document.getElementById('kpis').addEventListener('click', onKpiActivate);
 document.getElementById('kpis').addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); onKpiActivate(e); } });
@@ -362,10 +369,11 @@ function renderTableHead(){
   thead.innerHTML = '<tr>' + COLS.map(c=>`<th class="${c.num?'num':''}" onclick="sortBy('${c.k}')">${c.label}${state.sortKey===c.k?(state.sortDir>0?' ▲':' ▼'):''}</th>`).join('') + '</tr>';
 }
 function sortBy(k){
+  commitSearch();
   if(state.sortKey===k) state.sortDir *= -1; else { state.sortKey=k; state.sortDir=-1; }
   render();
   const col = COLS.find(c => c.k === k);
-  track('sort', {column: col ? col.label : k, direction: state.sortDir > 0 ? 'по возрастанию' : 'по убыванию'});
+  track('sort', {'Сортировка': {[col ? col.label : k]: state.sortDir > 0 ? 'по возрастанию' : 'по убыванию'}});
 }
 
 function renderTable(rows){
@@ -450,12 +458,16 @@ function placeCard(scroll){
 }
 function selectBond(ticker, keepOpen, source){
   const wasOpen = state.selected === ticker;
+  const query = state.search.trim().slice(0, 60);
+  commitSearch();
   state.selected = (state.selected===ticker && !keepOpen) ? null : ticker;
   placeCard(true);
-  if (state.selected === ticker && !wasOpen) {
-    const b = BONDS.find(x => x.ticker === ticker);
-    track('card_open', {ticker, exchange: b ? b.exchange : null, source: source || 'таблица'});
-  }
+  if (state.selected !== ticker || wasOpen) return;
+  const b = BONDS.find(x => x.ticker === ticker);
+  const exch = b ? b.exchange : '—';
+  if (source === 'chart') track('card_chart', {'Карточка с графика': {[exch]: ticker}});
+  else if (query) track('card_search', {'Карточка из поиска': {[query]: ticker}});
+  else track('card_table', {'Карточка из таблицы': {[exch]: ticker}});
 }
 
 function renderScatter(rows){
@@ -474,7 +486,7 @@ function renderScatter(rows){
   const xTicks = 6;
   for(let i=0;i<=xTicks;i++){ const v = xMax*i/xTicks; s += `<text x="${X(v).toFixed(1)}" y="${H-padB+14}">${v.toFixed(0)}л</text>`; }
   pts.forEach(p=>{
-    s += `<circle class="pt" cx="${X(p.modified_duration).toFixed(1)}" cy="${Y(p.ytm).toFixed(1)}" r="4" fill="${EXCH_COLOR[p.exchange]}" opacity="0.75" onclick="setTab(0, document.querySelectorAll('.tab')[0]); selectBond('${p.ticker.replace(/'/g,"\\'")}', true, 'график')"><title>${p.ticker} · YTM ${fmt(p.ytm)}% · дюр ${fmt(p.modified_duration)}л</title></circle>`;
+    s += `<circle class="pt" cx="${X(p.modified_duration).toFixed(1)}" cy="${Y(p.ytm).toFixed(1)}" r="4" fill="${EXCH_COLOR[p.exchange]}" opacity="0.75" onclick="setTab(0, document.querySelectorAll('.tab')[0]); selectBond('${p.ticker.replace(/'/g,"\\'")}', true, 'chart')"><title>${p.ticker} · YTM ${fmt(p.ytm)}% · дюр ${fmt(p.modified_duration)}л</title></circle>`;
   });
   svg.innerHTML = s;
 }
@@ -522,8 +534,21 @@ function syncCardWidth(){ const w = document.querySelector('.tablewrap'); if(w &
 window.addEventListener('resize', syncCardWidth);
 // --- Yandex Metrika goals (JS events) ---
 // The site build defines window.KZB_METRIKA_ID and the ym() loader. Elsewhere
-// (the artifact, a local file) track() does nothing.
-const FILTER_NAMES = {exchange: 'Биржа', currency: 'Валюта', kind: 'Тип', mat: 'Срок'};
+// (the artifact, a local file) track() does nothing. Every goal id below must
+// exist in Metrika as a "Целевое событие" goal; the params land in the
+// "Параметры визитов" report as a tree.
+const FILTER_GOALS = {
+  exchange: {name: 'Биржа', prefix: 'filter_exchange_', values: {'KASE': 'kase', 'AIX': 'aix'}},
+  currency: {name: 'Валюта', prefix: 'filter_currency_', values: {'USD': 'usd', 'CNY': 'cny', 'EUR': 'eur', 'RUB': 'rub', 'AED': 'aed'}},
+  kind: {name: 'Тип', prefix: 'filter_type_', values: {
+    'Купонная, фиксированная': 'fixed', 'Дисконтная': 'discount', 'Купонная, плавающая': 'floating',
+    'Сукук': 'sukuk', 'Купонная, капитализация': 'capitalization'}},
+  mat: {name: 'Срок', prefix: 'filter_maturity_', values: {
+    'до 1 г.': 'lt1', '1–3 г.': '1_3', '3–5 г.': '3_5', '5+ лет': '5plus',
+    'бессрочные': 'perpetual', 'без даты': 'nodate'}},
+};
+const TAB_GOALS = ['tab_table', 'tab_chart', 'tab_note'];
+
 function track(goal, params, done){
   let finished = false;
   const finish = () => { if (!finished) { finished = true; if (done) done(); } };
@@ -536,20 +561,72 @@ function track(goal, params, done){
   } catch (e) {}
   finish();
 }
-let searchTimer = null, lastSearch = '';
-function trackSearch(text){
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    const q = text.trim().slice(0, 60);
-    if (q && q !== lastSearch) { lastSearch = q; track('search', {query: q}); }
-  }, 1500);
+
+// Search filters the table on every keystroke, so one search is everything from
+// the first letter in an empty box until the visitor is done with the query:
+// they act on the page (card, filter, sort, tab, Enter, leave the box), stay
+// idle for SEARCH_IDLE_MS, close the page, or clear the box. Typing and erasing
+// in between send nothing. A search counts as refined ("уточнял") when the
+// visitor erased and then typed again, or started by editing a query that was
+// already sent; erasing the whole box only ends the search.
+const SEARCH_IDLE_MS = 5000;
+let search = null;  // {edited, erasing, beforeErase} while a search is in progress
+let searchTimer = null;
+
+function rowsFor(text){
+  const keep = state.search;
+  state.search = text;
+  const n = filtered().length;
+  state.search = keep;
+  return n;
 }
+function sendSearch(text, edited){
+  const q = text.trim().slice(0, 60);
+  if (!q) return;
+  const rows = rowsFor(text);
+  if (rows === 0) track('search_empty', {'Поиск без результатов': {[q]: edited ? 'уточнял' : 'с первого раза'}});
+  else track('search', {'Поиск': {[q]: rows + ' стр.' + (edited ? ', уточнял' : '')}});
+}
+function searchInput(prev, text){
+  clearTimeout(searchTimer);
+  const erased = text.length < prev.length;
+  if (!search) {
+    if (text === '') return;
+    // A search that starts by erasing edits a query already sent: it is a refinement,
+    // and clearing it afterwards sends nothing more.
+    search = erased ? {edited: true, erasing: true, beforeErase: null}
+                    : {edited: false, erasing: false, beforeErase: null};
+  } else if (erased) {
+    if (!search.erasing) { search.erasing = true; search.beforeErase = prev; }
+  } else if (search.erasing) {
+    search.erasing = false; search.beforeErase = null; search.edited = true;
+  }
+  if (text === '') {
+    // Box cleared: the query that stood before the visitor started erasing is done.
+    if (search.beforeErase) sendSearch(search.beforeErase, search.edited);
+    search = null;
+    return;
+  }
+  searchTimer = setTimeout(commitSearch, SEARCH_IDLE_MS);
+}
+function commitSearch(){
+  clearTimeout(searchTimer);
+  if (!search) return;
+  const edited = search.edited;
+  search = null;
+  sendSearch(state.search, edited);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') commitSearch(); });
+window.addEventListener('pagehide', commitSearch);
+
 function openTab(i, btn){
   const changed = !btn.classList.contains('active');
+  commitSearch();
   setTab(i, btn);
-  if (changed) track('tab_open', {tab: btn.textContent.trim()});
+  if (changed) track(TAB_GOALS[i]);
 }
 function resetAll(){
+  commitSearch();
   track('reset_filters', {}, () => location.reload());
 }
 
