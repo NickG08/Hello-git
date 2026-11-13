@@ -375,7 +375,8 @@ function sortBy(k){
   if(state.sortKey===k) state.sortDir *= -1; else { state.sortKey=k; state.sortDir=-1; }
   render();
   const col = COLS.find(c => c.k === k);
-  track('sort', {'Сортировка': {[col ? col.label : k]: state.sortDir > 0 ? 'по возрастанию' : 'по убыванию'}});
+  track(SORT_GOALS[k] || 'sort_other',
+        {'Сортировка': {[col ? col.label : k]: state.sortDir > 0 ? 'по возрастанию' : 'по убыванию'}});
 }
 
 function renderTable(rows){
@@ -551,6 +552,11 @@ const FILTER_GOALS = {
     'бессрочные': 'perpetual', 'без даты': 'nodate'}},
 };
 const TAB_GOALS = ['tab_table', 'tab_chart', 'tab_note'];
+// Columns people compare bonds by get a goal each; ticker, issuer and type go to sort_other.
+const SORT_GOALS = {
+  ytm: 'sort_ytm', clean_price: 'sort_price', coupon_rate: 'sort_coupon', modified_duration: 'sort_duration',
+  maturity_date: 'sort_maturity', face_value: 'sort_face', exchange: 'sort_exchange', currency: 'sort_currency',
+};
 
 function track(goal, params, done){
   let finished = false;

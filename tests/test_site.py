@@ -121,6 +121,8 @@ def test_page_script_sends_every_agreed_goal():
         "tab_table", "tab_chart", "tab_note",
         "card_table", "card_chart", "card_search",
         "filter_exchange_", "filter_currency_", "filter_type_", "filter_maturity_", "filter_clear", "filter_combo",
-        "search", "search_empty", "sort", "reset_filters",
+        "search", "search_empty", "reset_filters",
+        "sort_ytm", "sort_price", "sort_coupon", "sort_duration", "sort_maturity",
+        "sort_face", "sort_exchange", "sort_currency", "sort_other",
     ):
         assert f"'{goal}" in page, goal
