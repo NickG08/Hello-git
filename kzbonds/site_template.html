@@ -340,6 +340,7 @@ function onKpiActivate(e){
     commitSearch();
     state.kpi[r.dataset.reset].clear(); render();
     track('filter_clear', {'Снятие фильтра': {[FILTER_GOALS[r.dataset.reset].name]: 'крестик'}});
+    filtersChanged();
     return;
   }
   const k = e.target.closest('.kf');
@@ -352,6 +353,7 @@ function onKpiActivate(e){
   const g = FILTER_GOALS[k.dataset.dim];
   if (on) track(g.prefix + (g.values[v] || 'other'), {'Фильтр': {[g.name]: v}});
   else track('filter_clear', {'Снятие фильтра': {[g.name]: v}});
+  filtersChanged();
 }
 document.getElementById('kpis').addEventListener('click', onKpiActivate);
 document.getElementById('kpis').addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); onKpiActivate(e); } });
@@ -369,7 +371,7 @@ function renderTableHead(){
   thead.innerHTML = '<tr>' + COLS.map(c=>`<th class="${c.num?'num':''}" onclick="sortBy('${c.k}')">${c.label}${state.sortKey===c.k?(state.sortDir>0?' ▲':' ▼'):''}</th>`).join('') + '</tr>';
 }
 function sortBy(k){
-  commitSearch();
+  commitSearch(); commitCombo();
   if(state.sortKey===k) state.sortDir *= -1; else { state.sortKey=k; state.sortDir=-1; }
   render();
   const col = COLS.find(c => c.k === k);
@@ -459,15 +461,16 @@ function placeCard(scroll){
 function selectBond(ticker, keepOpen, source){
   const wasOpen = state.selected === ticker;
   const query = state.search.trim().slice(0, 60);
-  commitSearch();
+  commitSearch(); commitCombo();
   state.selected = (state.selected===ticker && !keepOpen) ? null : ticker;
   placeCard(true);
   if (state.selected !== ticker || wasOpen) return;
   const b = BONDS.find(x => x.ticker === ticker);
   const exch = b ? b.exchange : '—';
-  if (source === 'chart') track('card_chart', {'Карточка с графика': {[exch]: ticker}});
-  else if (query) track('card_search', {'Карточка из поиска': {[query]: ticker}});
-  else track('card_table', {'Карточка из таблицы': {[exch]: ticker}});
+  const under = filtersText() || 'без фильтров';
+  if (source === 'chart') track('card_chart', {'Карточка с графика': {[exch]: {[ticker]: under}}});
+  else if (query) track('card_search', {'Карточка из поиска': {[query]: {[ticker]: under}}});
+  else track('card_table', {'Карточка из таблицы': {[exch]: {[ticker]: under}}});
 }
 
 function renderScatter(rows){
@@ -592,6 +595,7 @@ function searchInput(prev, text){
   const erased = text.length < prev.length;
   if (!search) {
     if (text === '') return;
+    commitCombo();
     // A search that starts by erasing edits a query already sent: it is a refinement,
     // and clearing it afterwards sends nothing more.
     search = erased ? {edited: true, erasing: true, beforeErase: null}
@@ -619,14 +623,47 @@ function commitSearch(){
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') commitSearch(); });
 window.addEventListener('pagehide', commitSearch);
 
+// A filter combination counts once the visitor is done setting filters: the next
+// other action (card, sort, tab, search, reset), COMBO_IDLE_MS without filter
+// clicks, or closing the page. Only combinations of two values or more are sent;
+// blocks and values always come in the same order, so the order of clicks does not matter.
+const COMBO_IDLE_MS = 5000;
+const COMBO_ORDER = ['exchange', 'currency', 'kind', 'mat'];
+const MAT_ORDER = ['до 1 г.', '1–3 г.', '3–5 г.', '5+ лет', 'бессрочные', 'без даты'];
+let comboPending = false, comboTimer = null, lastCombo = '';
+
+function filtersText(){
+  return COMBO_ORDER.filter(d => state.kpi[d].size).map(d => {
+    const vals = [...state.kpi[d]];
+    vals.sort(d === 'mat' ? (a, b) => MAT_ORDER.indexOf(a) - MAT_ORDER.indexOf(b) : (a, b) => a.localeCompare(b, 'ru'));
+    return FILTER_GOALS[d].name + ': ' + vals.join(', ');
+  }).join(' · ');
+}
+function filtersCount(){ return COMBO_ORDER.reduce((n, d) => n + state.kpi[d].size, 0); }
+function filtersChanged(){
+  comboPending = true;
+  clearTimeout(comboTimer);
+  comboTimer = setTimeout(commitCombo, COMBO_IDLE_MS);
+}
+function commitCombo(){
+  clearTimeout(comboTimer);
+  if (!comboPending) return;
+  comboPending = false;
+  const text = filtersText();
+  if (filtersCount() >= 2 && text !== lastCombo) track('filter_combo', {'Комбинация фильтров': text});
+  lastCombo = text;
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') commitCombo(); });
+window.addEventListener('pagehide', commitCombo);
+
 function openTab(i, btn){
   const changed = !btn.classList.contains('active');
-  commitSearch();
+  commitSearch(); commitCombo();
   setTab(i, btn);
   if (changed) track(TAB_GOALS[i]);
 }
 function resetAll(){
-  commitSearch();
+  commitSearch(); commitCombo();
   track('reset_filters', {}, () => location.reload());
 }
 
