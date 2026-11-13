@@ -526,15 +526,15 @@ function render(){
   renderScatter(rows);
 }
 
-// Snapshot time in the viewer's own time zone, e.g. "2026-11-12 17:07 (UTC+3)".
-// The page is built with the UTC time, which stays if this cannot run.
+// Snapshot time in the viewer's own time zone, e.g. "2026-11-12 17:07 (GMT+3)".
+// The page is built with the GMT time, which stays if this cannot run.
 function localStamp(iso){
   const d = new Date(iso);
   if (isNaN(d)) return null;
   const p = n => String(n).padStart(2, '0');
   const off = -d.getTimezoneOffset();
   const h = Math.floor(Math.abs(off) / 60), m = Math.abs(off) % 60;
-  const zone = off === 0 ? 'UTC' : `UTC${off > 0 ? '+' : '−'}${h}${m ? ':' + p(m) : ''}`;
+  const zone = off === 0 ? 'GMT' : `GMT${off > 0 ? '+' : '−'}${h}${m ? ':' + p(m) : ''}`;
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())} (${zone})`;
 }
 document.querySelectorAll('[data-utc]').forEach(el => {

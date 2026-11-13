@@ -105,7 +105,7 @@ def _snapshot_time(df: pd.DataFrame) -> pd.Timestamp | None:
 def _generated_at(df: pd.DataFrame) -> str:
     """Shown as is when the page script cannot convert it to local time."""
     stamp = _snapshot_time(df)
-    return stamp.strftime("%Y-%m-%d %H:%M UTC") if stamp is not None else "—"
+    return stamp.strftime("%Y-%m-%d %H:%M GMT") if stamp is not None else "—"
 
 
 def _generated_iso(df: pd.DataFrame) -> str:
