@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from kzbonds.scheduler import is_stale, next_run, parse_times, previous_run
+from kzbonds.scheduler import is_stale, next_run, parse_times, previous_run, upcoming_runs
 
 TZ = ZoneInfo("Asia/Almaty")
 TIMES = parse_times("11:45,12:45,17:50")
@@ -70,3 +70,11 @@ def test_snapshot_is_stale_when_a_slot_passed_without_a_run():
 
 def test_no_snapshot_at_all_is_stale():
     assert is_stale(None, _astana(2026, 11, 12, 3, 0), TIMES, TZ)
+
+
+def test_upcoming_runs_lists_the_rest_of_today_then_the_next_weekdays():
+    runs = upcoming_runs(_astana(2026, 11, 13, 12, 0), TIMES, TZ, days=3)  # Friday noon
+    assert runs[0] == _astana(2026, 11, 13, 12, 45)
+    assert runs[1] == _astana(2026, 11, 13, 17, 50)
+    assert runs[2] == _astana(2026, 11, 16, 11, 45)  # Monday, the weekend skipped
+    assert all(a < b for a, b in zip(runs, runs[1:]))

@@ -118,11 +118,42 @@ def test_no_counter_number_means_no_metrika(monkeypatch):
 def test_page_script_sends_every_agreed_goal():
     page = site.render(_snapshot(), mode="site")
     for goal in (
-        "tab_table", "tab_chart", "tab_note",
-        "card_table", "card_chart", "card_search",
-        "filter_exchange_", "filter_currency_", "filter_type_", "filter_maturity_", "filter_clear", "filter_combo",
-        "search", "search_empty", "reset_filters",
-        "sort_ytm", "sort_price", "sort_coupon", "sort_duration", "sort_maturity",
-        "sort_face", "sort_exchange", "sort_currency", "sort_other",
+        "tab_table",
+        "tab_chart",
+        "tab_note",
+        "card_table",
+        "card_chart",
+        "card_search",
+        "filter_exchange_",
+        "filter_currency_",
+        "filter_type_",
+        "filter_maturity_",
+        "filter_clear",
+        "filter_combo",
+        "search",
+        "search_empty",
+        "reset_filters",
+        "sort_ytm",
+        "sort_price",
+        "sort_coupon",
+        "sort_duration",
+        "sort_maturity",
+        "sort_face",
+        "sort_exchange",
+        "sort_currency",
+        "sort_other",
     ):
         assert f"'{goal}" in page, goal
+
+
+def test_site_page_carries_the_coming_refresh_times_and_the_artifact_does_not():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    friday_noon = datetime(2026, 11, 13, 12, 0, tzinfo=ZoneInfo("Asia/Almaty"))
+    full = site.render(_snapshot(), mode="site", now=friday_noon)
+    start = full.index("window.KZB_NEXT_RUNS = ") + len("window.KZB_NEXT_RUNS = ")
+    runs = json.loads(full[start : full.index(";</script>", start)])
+    assert runs[0] == "2026-11-13T07:45:00Z"  # 12:45 Astana
+    assert full.index("KZB_NEXT_RUNS") < full.index("</head>")
+    assert "KZB_NEXT_RUNS = " not in site.render(_snapshot(), mode="artifact")

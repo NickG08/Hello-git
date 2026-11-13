@@ -18,7 +18,9 @@ import json
 import logging
 import os
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -142,8 +144,21 @@ def _script_json(value) -> str:
     return json.dumps(value, ensure_ascii=False).replace("</", "<\\/")
 
 
-def render(df: pd.DataFrame, mode: str = "site") -> str:
-    """The page for one run. mode is "site" or "artifact"."""
+def _next_runs_script(now: datetime | None) -> str:
+    """The coming refresh times (UTC) for the line "следующее обновление" in the header.
+
+    The page is rebuilt after every run, so a week of slots always covers the next one."""
+    from kzbonds import scheduler  # imported here: scheduler imports this module
+
+    tz = ZoneInfo(config.SCHEDULE_TZ)
+    now = now or datetime.now(tz)
+    runs = scheduler.upcoming_runs(now, scheduler.parse_times(config.SCHEDULE_TIMES), tz)
+    stamps = [r.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ") for r in runs]
+    return f"<script>window.KZB_NEXT_RUNS = {json.dumps(stamps)};</script>\n"
+
+
+def render(df: pd.DataFrame, mode: str = "site", now: datetime | None = None) -> str:
+    """The page for one run. mode is "site" or "artifact"; `now` is for tests."""
     if mode not in ("site", "artifact"):
         raise ValueError(f"unknown mode: {mode}")
     if df.empty:
@@ -165,7 +180,7 @@ def render(df: pd.DataFrame, mode: str = "site") -> str:
         raise ValueError("template has no </style> line to split head from body")
     counter = _metrika_id()
     return _DOCUMENT.format(
-        analytics_head=_METRIKA_HEAD.format(id=counter) if counter else "",
+        analytics_head=_next_runs_script(now) + (_METRIKA_HEAD.format(id=counter) if counter else ""),
         analytics_body=_METRIKA_BODY.format(id=counter) if counter else "",
         head=head + separator,
         body=body,

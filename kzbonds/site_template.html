@@ -54,7 +54,8 @@
   .brand .sub{ font-size:12.5px; color:var(--muted); }
   .status{ font-size:12.5px; color:var(--muted); }
   .status .dot{ width:7px; height:7px; border-radius:50%; background:var(--good); display:inline-block; margin-right:6px; box-shadow:0 0 0 3px var(--good-bg); }
-  .status .num{ color:var(--ink); font-weight:500; }
+  .status .num{ color:var(--ink); font-weight:500; white-space:nowrap; }
+  .status .nextrun{ white-space:nowrap; }
 
   .kpis{ display:grid; grid-template-columns:170px minmax(max-content,1fr) minmax(max-content,1.4fr) minmax(max-content,0.95fr) 150px; border:1px solid var(--line-strong); border-radius:4px; overflow:hidden; background:var(--surface); margin-bottom:20px; }
   .kpi{ padding:14px 14px; border-right:1px solid var(--line); }
@@ -201,7 +202,7 @@
       <div class="sub">KASE + AIX · валютные облигации</div>
     </div>
     <div class="headright">
-      <div class="status"><span class="dot"></span>снапшот от <span class="num" data-utc="__GENERATED_ISO__">__GENERATED_AT__</span></div>
+      <div class="status"><span class="dot"></span>снапшот от <span class="num" data-utc="__GENERATED_ISO__">__GENERATED_AT__</span> <span class="nextrun" hidden>· следующее обновление <span class="num" id="nextrun"></span></span></div>
       <div class="themebtns">
         <button class="active" onclick="setTheme(null,this)">Системная</button>
         <button onclick="setTheme('light',this)">Светлая</button>
@@ -707,6 +708,30 @@ document.querySelectorAll('[data-utc]').forEach(el => {
   const text = localStamp(el.dataset.utc);
   if (text) el.textContent = text;
 });
+
+// Next scheduled refresh in the viewer's time zone: "13:45", "завтра 10:45",
+// "пн 10:45". Only the site carries the schedule (window.KZB_NEXT_RUNS, UTC);
+// the artifact has none, so the line stays hidden there.
+const WEEKDAYS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+function nextRunText(now){
+  const next = (window.KZB_NEXT_RUNS || []).map(s => new Date(s)).find(d => d > now);
+  if (!next) return null;
+  const p = n => String(n).padStart(2, '0');
+  const hm = `${p(next.getHours())}:${p(next.getMinutes())}`;
+  const day = d => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((day(next) - day(now)) / 86400000);
+  if (days === 0) return hm;
+  if (days === 1) return 'завтра ' + hm;
+  return WEEKDAYS[next.getDay()] + ' ' + hm;
+}
+function showNextRun(){
+  const box = document.querySelector('.nextrun');
+  const text = nextRunText(new Date());
+  box.hidden = !text;
+  if (text) document.getElementById('nextrun').textContent = text;
+}
+showNextRun();
+setInterval(showNextRun, 60000);
 
 renderFilters();
 render();

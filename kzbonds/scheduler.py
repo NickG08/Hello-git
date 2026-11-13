@@ -58,6 +58,17 @@ def next_run(now: datetime, times: list[time], tz: ZoneInfo) -> datetime:
     raise RuntimeError("no scheduled run within a week")
 
 
+def upcoming_runs(now: datetime, times: list[time], tz: ZoneInfo, days: int = 8) -> list[datetime]:
+    """Every scheduled moment after `now` within `days` days, in order."""
+    local = now.astimezone(tz)
+    return [
+        slot
+        for offset in range(days + 1)
+        for slot in _slots_on(local.date() + timedelta(days=offset), times, tz)
+        if slot > local
+    ]
+
+
 def previous_run(now: datetime, times: list[time], tz: ZoneInfo) -> datetime:
     """The last scheduled moment at or before `now`."""
     local = now.astimezone(tz)
