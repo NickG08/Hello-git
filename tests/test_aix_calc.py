@@ -3,7 +3,7 @@
 from datetime import datetime
 
 from kzbonds.aix_docs import coupon_note, parse_aix_terms
-from kzbonds.sources.aix import _calculate_ytm, _cash_flows, _has_deferred_coupon
+from kzbonds.sources.aix import _calculate_ytm, _capitalization_note, _cash_flows, _has_deferred_coupon
 
 SETTLEMENT = datetime(2026, 11, 13)
 
@@ -105,3 +105,38 @@ def test_price_is_todays_last_deal_when_the_bond_traded_today():
     assert _current_price(95.28, 99.99, 0) == 95.28  # yesterday's deal: the close already is the reference price
     assert _current_price(100, None, 0) == 100.0
     assert _current_price("100%", None, None) == 100.0
+
+
+def test_capitalisation_note_flags_aix_simple_interest():
+    # BIPC33.1226 on 19.11.2026: AIX shows 15.089% (simple, on the original nominal);
+    # the offer terms capitalised 8% on 30.12.2025, so 8 + 108 * 8% * 319/360 = 15.656%.
+    note = _capitalization_note(
+        8.0, 1, datetime(2024, 12, 30), datetime(2026, 12, 30), datetime(2026, 11, 19), 360, 15.088888889
+    )
+    assert note == (
+        "По условиям выпуска купон капитализируется раз в год; при погашении — 116,64% исходного номинала. "
+        "AIX считает НКД без капитализации: 15,089% вместо 15,656%, номинал в данных AIX не увеличен."
+    )
+
+
+def test_capitalisation_note_before_first_capitalisation_has_nothing_to_compare():
+    # KTEL4.1028: first capitalisation on 27.04.2027, AIX's 0.275% is right for now.
+    note = _capitalization_note(
+        4.5, 2, datetime(2026, 10, 28), datetime(2028, 10, 28), datetime(2026, 11, 19), 360, 0.275
+    )
+    assert (
+        note == "По условиям выпуска купон капитализируется раз в полгода; при погашении — 109,31% исходного номинала."
+    )
+
+
+def test_capitalisation_note_silent_when_aix_already_compounds():
+    note = _capitalization_note(
+        8.0, 1, datetime(2024, 12, 30), datetime(2026, 12, 30), datetime(2026, 11, 19), 360, 15.656
+    )
+    assert "AIX" not in note
+    assert (
+        _capitalization_note(
+            8.0, None, datetime(2024, 12, 30), datetime(2026, 12, 30), datetime(2026, 11, 19), 360, 15.0
+        )
+        is None
+    )

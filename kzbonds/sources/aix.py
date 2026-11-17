@@ -223,6 +223,53 @@ def _period_coupon(coupon_rate, coupon_freq, start, end, year_basis, capitalizat
     return coupon_rate * _period_fraction(start, end, coupon_freq, year_basis)
 
 
+_EVERY = {1: "раз в год", 2: "раз в полгода", 4: "раз в квартал", 12: "раз в месяц"}
+
+
+def _pct(value: float, digits: int) -> str:
+    return f"{value:.{digits}f}".replace(".", ",") + "%"
+
+
+def _capitalization_note(
+    coupon_rate, capitalization_freq, accrual_start, maturity_date, settlement_date, year_basis, accrued_aix
+) -> str | None:
+    """What a capitalising bond pays by its offer terms, and where AIX's data disagree.
+
+    AIX keeps the original nominal and accrues simple interest on it even
+    after a capitalisation date; the offer terms compound. Checked on
+    BIPC33.1226, SYMS46.0227 and BIPC49.0427 (Nov 2026)."""
+    if not (coupon_rate and capitalization_freq and accrual_start and maturity_date):
+        return None
+    total = 100.0 + _period_coupon(
+        coupon_rate, capitalization_freq, accrual_start, maturity_date, year_basis, capitalization_freq
+    )
+    note = (
+        f"По условиям выпуска купон капитализируется {_EVERY[int(capitalization_freq)]}; "
+        f"при погашении — {_pct(total, 2)} исходного номинала."
+    )
+    months = 12 // int(capitalization_freq)
+    if accrued_aix is None or settlement_date < accrual_start + relativedelta(months=months):
+        return note  # no capitalisation date has passed yet: nothing to compare
+    simple = coupon_rate * _calculate_days_30_360(accrual_start, settlement_date) / 360.0
+    by_terms = _period_coupon(
+        coupon_rate, capitalization_freq, accrual_start, settlement_date, year_basis, capitalization_freq
+    )
+    if abs(accrued_aix - simple) < 0.01 and by_terms - accrued_aix > 0.01:
+        note += (
+            f" AIX считает НКД без капитализации: {_pct(accrued_aix, 3)} вместо {_pct(by_terms, 3)}, "
+            "номинал в данных AIX не увеличен."
+        )
+    return note
+
+
+def _accrual_start(terms: dict, coupon_details, issue_date):
+    if terms.get("accrual_start"):
+        return datetime.fromisoformat(terms["accrual_start"])
+    starts = [_parse_date_safe(d.get("coupon_date")) for d in coupon_details or []]
+    starts = [d for d in starts if d]
+    return min(starts) if starts else issue_date
+
+
 def _cash_flows(
     face_value,
     coupon_rate,
@@ -1055,7 +1102,23 @@ async def fetch_aix_bonds_async() -> pd.DataFrame:
                     if _is_perpetual(profile, b["ticker"])
                     else aix_docs.coupon_note(dterms)
                 ),
-                "data_note": _DATA_NOTES.get(b["ticker"]),
+                "data_note": " ".join(
+                    n
+                    for n in (
+                        _DATA_NOTES.get(b["ticker"]),
+                        _capitalization_note(
+                            coupon_rate_val,
+                            dterms.get("capitalization_freq"),
+                            _accrual_start(dterms, coupon_details_val, issue_date_val),
+                            maturity_date_val,
+                            settlement_date,
+                            year_basis_val,
+                            accrued_aix,
+                        ),
+                    )
+                    if n
+                )
+                or None,
                 "day_count_basis": year_basis_val,
                 "last_coupon_date": None,
                 "maturity_date": (
