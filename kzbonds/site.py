@@ -47,6 +47,7 @@ SITE_COLUMNS = [
     "coupon_freq",
     "day_count_basis",
     "maturity_date",
+    "maturity_note",
     "days_to_maturity",
     "ytm",
     "macaulay_duration",

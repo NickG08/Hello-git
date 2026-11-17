@@ -565,13 +565,21 @@ def _has_term_gaps(bond: dict, characteristics: dict) -> bool:
     )
 
 
-def _derive_maturity(ticker, bond_type_flag, characteristics) -> date | None:
-    # KASE leaves maturity blank on some issues placed directly on the exchange.
-    # Per their prospectuses circulation starts at the first placement trade,
-    # so start-of-circulation (or, failing that, trading open date) + term.
-    start = _parse_date(
-        _extract_characteristic_by_label(characteristics, "Дата начала обращения")
-    ) or _parse_date(_extract_characteristic_by_label(characteristics, "Дата открытия торгов"))
+def _derive_maturity(ticker, bond_type_flag, characteristics) -> tuple[date, str] | None:
+    """Maturity KASE hasn't published yet, and the footnote that says how it was estimated.
+
+    KASE leaves maturity blank on some issues placed directly on the exchange.
+    Per their prospectuses circulation starts at the first placement trade,
+    so start-of-circulation (or, failing that, trading open date) + term.
+    KASE publishes the date itself after that trade: MFSFb19 opened 03.11.2026,
+    first traded 12.11 and matures 12.11.2027, not 03.11.2027. KASE's open data
+    has no first-trade date (only the last), so the open date stays a fallback.
+    """
+    start = _parse_date(_extract_characteristic_by_label(characteristics, "Дата начала обращения"))
+    basis = "дата начала обращения"
+    if not start:
+        start = _parse_date(_extract_characteristic_by_label(characteristics, "Дата открытия торгов"))
+        basis = "дата открытия торгов"
     if not start:
         return None
     months = (_get_bond_main_api(ticker, bond_type_flag).get("characteristics") or {}).get(
@@ -579,7 +587,17 @@ def _derive_maturity(ticker, bond_type_flag, characteristics) -> date | None:
     )
     if not months:
         return None
-    return start + relativedelta(months=int(round(float(months))))
+    months = int(round(float(months)))
+    note = (
+        f"Дата погашения расчётная: {basis} {start:%d.%m.%Y} + срок обращения {months} мес. "
+        "Биржа дату ещё не опубликовала."
+    )
+    if basis == "дата открытия торгов":
+        note += (
+            " По проспектам таких выпусков срок отсчитывается от первой сделки размещения, "
+            "поэтому дата может сдвинуться на более позднюю."
+        )
+    return start + relativedelta(months=months), note
 
 
 def _kase_bond_kind(ticker_data: dict, characteristics: dict) -> str:
@@ -740,9 +758,11 @@ def _process_bond(
             if frequency == 2 and "frequency" in html_data:
                 frequency = html_data["frequency"]
 
+    maturity_note = None
     if not maturity_date:
         derived = _derive_maturity(ticker, bond_type_flag, characteristics)
         if derived:
+            derived, maturity_note = derived
             maturity_date = derived.isoformat()
             quality_flags.append("maturity_derived")
             if dtm is None:
@@ -816,6 +836,7 @@ def _process_bond(
         "day_count_basis": "ACT/ACT (365)" if basis_raw == "actual" else basis,
         "last_coupon_date": last_coupon_date_str,
         "maturity_date": maturity_date,
+        "maturity_note": maturity_note,
         "days_to_maturity": dtm,
         "trade_date": date0,
         "last_trade_date": str(date0)[:10] if date0 else None,

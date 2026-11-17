@@ -58,6 +58,7 @@ UNIFIED_COLUMNS = [
     "day_count_basis",
     "last_coupon_date",
     "maturity_date",
+    "maturity_note",
     "days_to_maturity",
     "ytm",
     "ytm_calc",

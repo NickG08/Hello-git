@@ -75,7 +75,13 @@ def test_maturity_derived_from_trading_open_date_plus_term(monkeypatch):
         kase, "_get_bond_main_api", lambda t, b: {"characteristics": {"circulation_months": 18.0}}
     )
     chars = {"596": {"label": "Дата открытия торгов", "value": "26.11.25"}}
-    assert kase._derive_maturity("MFSCb7", "corp", chars) == date(2027, 5, 26)
+    derived, note = kase._derive_maturity("MFSCb7", "corp", chars)
+    assert derived == date(2027, 5, 26)
+    assert note == (
+        "Дата погашения расчётная: дата открытия торгов 26.11.2025 + срок обращения 18 мес. "
+        "Биржа дату ещё не опубликовала. По проспектам таких выпусков срок отсчитывается "
+        "от первой сделки размещения, поэтому дата может сдвинуться на более позднюю."
+    )
 
 
 def test_maturity_derivation_prefers_circulation_start(monkeypatch):
@@ -88,7 +94,12 @@ def test_maturity_derivation_prefers_circulation_start(monkeypatch):
         "554": {"label": "Дата начала обращения", "value": "01.09.25"},
         "596": {"label": "Дата открытия торгов", "value": "23.09.25"},
     }
-    assert kase._derive_maturity("X", "corp", chars) == date(2026, 9, 1)
+    derived, note = kase._derive_maturity("X", "corp", chars)
+    assert derived == date(2026, 9, 1)
+    assert note == (
+        "Дата погашения расчётная: дата начала обращения 01.09.2025 + срок обращения 12 мес. "
+        "Биржа дату ещё не опубликовала."
+    )
 
 
 def test_coupon_ytm_matches_the_yield_kase_publishes():

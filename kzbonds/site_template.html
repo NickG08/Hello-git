@@ -161,6 +161,7 @@
   .ts-row .v{ font-family:'JetBrains Mono',monospace; text-align:right; }
   .ts-note{ grid-column:1/-1; padding:10px 16px 4px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted); }
   .ts-note b{ color:var(--ink); }
+  .est{ color:var(--warn); font-weight:600; cursor:help; }
 
   .chartgrid{ display:grid; grid-template-columns:1.4fr 1fr; }
   @media (max-width:760px){ .chartgrid{ grid-template-columns:1fr; } }
@@ -399,13 +400,18 @@ function renderTable(rows){
       `<td class="issuer">${b.issuer||'—'}</td><td>${b.currency}</td><td>${KIND_SHORT[b.bond_kind]||b.bond_kind||'—'}</td>` +
       `<td class="num">${fmtInt(b.face_value)}${lotNote(b)}</td><td class="num">${fmt(b.clean_price)}</td>` +
       `<td class="num">${fmt(b.coupon_rate)}</td><td class="num">${fmt(b.ytm)}</td>` +
-      `<td class="num">${fmt(b.modified_duration)}</td><td class="num">${b.maturity_date||'—'}</td></tr>`;
+      `<td class="num">${fmt(b.modified_duration)}</td><td class="num">${maturityText(b)}</td></tr>`;
   }).join('') || '';
   document.getElementById('rowcount').textContent = rows.length + ' из ' + BONDS.length + ' строк показано · клик по строке раскрывает карточку бумаги';
   if(sorted.length===0) tbody.innerHTML = '<tr><td colspan="' + COLS.length + '" class="empty">Нет бумаг под текущие фильтры</td></tr>';
   placeCard(false);
 }
 
+// A maturity KASE hasn't published yet is our estimate: an asterisk here, the footnote in the card.
+function maturityText(b){
+  if(!b.maturity_date) return '—';
+  return b.maturity_note ? `${b.maturity_date}<span class="est" title="Дата расчётная: биржа её ещё не опубликовала. Подробнее в карточке">*</span>` : b.maturity_date;
+}
 function tsRow(k,v){ return `<div class="ts-row"><span class="k">${k}</span><span class="v">${v}</span></div>`; }
 const YTM_MAX_DEAL_AGE_DAYS = 30;
 function ytmNote(b){
@@ -435,9 +441,9 @@ function cardHtml(b){
     <div class="ts-groups">
       <div class="ts-group"><div class="ts-glabel">Цена</div>${tsRow('Чистая, %', fmt(b.clean_price))}${tsRow('Грязная, %', fmt(b.dirty_price))}${tsRow('НКД, %', fmt(b.accrued_interest,3))}${tsRow('Последняя сделка', b.last_trade_date || (b.clean_price===null ? '—' : 'не было'))}</div>
       <div class="ts-group"><div class="ts-glabel">Купон</div>${tsRow('Ставка, %', fmt(b.coupon_rate))}${tsRow('Частота', b.coupon_freq||'—')}${tsRow('Базис', b.day_count_basis||'—')}</div>
-      <div class="ts-group"><div class="ts-glabel">Срочность</div>${tsRow('Погашение', b.maturity_date||'—')}${tsRow('Дней (DTM)', b.days_to_maturity===null?'—':Math.round(b.days_to_maturity))}</div>
+      <div class="ts-group"><div class="ts-glabel">Срочность</div>${tsRow('Погашение', maturityText(b))}${tsRow('Дней (DTM)', b.days_to_maturity===null?'—':Math.round(b.days_to_maturity))}</div>
       <div class="ts-group"><div class="ts-glabel">Доходность / риск</div>${tsRow('YTM', fmt(b.ytm))}${tsRow('Дюр. Маколея', fmt(b.macaulay_duration))}${tsRow('Мод. дюрация', fmt(b.modified_duration))}${tsRow('Объём выпуска', b.issue_volume===null?'—':fmtInt(b.issue_volume))}</div>
-    ${ytmNote(b)}${b.data_note ? `<div class="ts-note"><b>Примечание:</b> ${b.data_note}</div>` : ''}
+    ${b.maturity_note ? `<div class="ts-note"><b class="est">*</b> ${b.maturity_note}</div>` : ''}${ytmNote(b)}${b.data_note ? `<div class="ts-note"><b>Примечание:</b> ${b.data_note}</div>` : ''}
     </div>`;
 }
 function placeCard(scroll){
