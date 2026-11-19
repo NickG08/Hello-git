@@ -61,5 +61,8 @@ SCHEDULE_TIMES = os.getenv("KZBONDS_SCHEDULE_TIMES", "10:45,11:40,12:45,13:45,14
 # version of the page never carries the counter.
 METRIKA_ID = os.getenv("KZBONDS_METRIKA_ID", "")
 
+# Public address of the site, used in the link preview tags (Open Graph).
+SITE_URL = os.getenv("KZBONDS_SITE_URL", "https://kazbonds-monitor.msk1.amvera.tech/")
+
 # The page kzbonds.site builds and kzbonds.serve hands out.
 SITE_INDEX_PATH = DATA_DIR / "site" / "index.html"

@@ -3,9 +3,9 @@ The whole public service in one process: a background thread refreshes the
 data on schedule (kzbonds.scheduler) and this module hands out the page it
 builds.
 
-Only three addresses answer: "/" and "/index.html" return the page,
-"/healthz" returns "ok". Everything else is 404 - there is no file tree to
-browse.
+Only four addresses answer: "/" and "/index.html" return the page,
+"/static/og-image.png" the link preview picture, "/healthz" returns "ok".
+Everything else is 404 - there is no file tree to browse.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ import logging
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from kzbonds import config, scheduler
@@ -62,6 +63,8 @@ class _Page:
 
 _page = _Page()
 
+OG_IMAGE_PATH = Path(__file__).parent / "static" / "og-image.png"
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "kzbonds"
@@ -78,6 +81,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, b"ok", "text/plain; charset=utf-8", send_body)
         elif path in ("/", "/index.html"):
             self._send_page(send_body)
+        elif path == "/static/og-image.png":
+            # Fetched by Telegram, LinkedIn and others for the link preview.
+            self._send(200, OG_IMAGE_PATH.read_bytes(), "image/png", send_body, cache="public, max-age=86400")
         else:
             self._send(404, b"Not found", "text/plain; charset=utf-8", send_body)
 
@@ -92,11 +98,19 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(200, raw, "text/html; charset=utf-8", send_body)
 
-    def _send(self, status: int, body: bytes, content_type: str, send_body: bool, encoding: str | None = None) -> None:
+    def _send(
+        self,
+        status: int,
+        body: bytes,
+        content_type: str,
+        send_body: bool,
+        encoding: str | None = None,
+        cache: str = "no-cache",
+    ) -> None:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Cache-Control", cache)
         self.send_header("Vary", "Accept-Encoding")
         self.send_header("X-Content-Type-Options", "nosniff")
         if encoding:

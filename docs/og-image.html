@@ -1,0 +1,69 @@
+<!doctype html>
+<!--
+  Source of kzbonds/static/og-image.png, the link preview picture (Open Graph).
+  1200x627 at device scale 1, e.g. with Playwright:
+    page.setViewportSize({width:1200, height:627}); page.screenshot({path:'kzbonds/static/og-image.png'})
+  Only terms that do not change are shown (exchange, currency, coupon, maturity):
+  a price or a YTM in a cached preview would go stale.
+-->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>KZ Bond Monitor — preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0F1417; --surface:#161C20; --surface-2:#1D2428;
+    --ink:#E7EAEC; --muted:#9AA3A8; --faint:#6E777C;
+    --line:#2A3237; --line-strong:#3A444A;
+    --accent:#5FB3CC; --kase:#6FA3D1; --aix:#E39A55;
+  }
+  *{ box-sizing:border-box; margin:0; }
+  html,body{ width:1200px; height:627px; background:var(--bg); color:var(--ink); font-family:'Archivo',sans-serif; overflow:hidden; }
+  .num{ font-family:'JetBrains Mono',monospace; font-variant-numeric:tabular-nums; }
+  .wrap{ padding:44px 56px 0; height:100%; display:flex; flex-direction:column; }
+  .brand{ font-weight:700; font-size:52px; letter-spacing:-0.02em; line-height:1; }
+  .brand span{ color:var(--accent); }
+  .sub{ margin-top:12px; font-size:24px; color:var(--muted); }
+  .facts{ display:flex; gap:14px; margin-top:26px; }
+  .fact{ border:1px solid var(--line-strong); border-radius:6px; background:var(--surface); padding:10px 18px; display:flex; align-items:baseline; gap:10px; }
+  .fact b{ font-family:'JetBrains Mono',monospace; font-size:28px; font-weight:600; }
+  .fact span{ font-size:19px; color:var(--muted); }
+  table{ margin-top:28px; width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--line-strong); border-radius:6px; overflow:hidden; font-size:19px; }
+  th{ text-align:left; font-size:13px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); font-weight:600; padding:11px 16px; border-bottom:1px solid var(--line-strong); }
+  td{ padding:9px 16px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  tr:last-child td{ border-bottom:none; }
+  th.r, td.r{ text-align:right; }
+  .exch{ font-weight:600; font-size:14px; padding:3px 8px; border-radius:3px; }
+  .exch.kase{ color:var(--kase); background:color-mix(in srgb, var(--kase) 16%, transparent); }
+  .exch.aix{ color:var(--aix); background:color-mix(in srgb, var(--aix) 18%, transparent); }
+  .issuer{ color:var(--muted); max-width:400px; overflow:hidden; text-overflow:ellipsis; }
+  .fade{ position:absolute; left:0; right:0; bottom:0; height:90px; background:linear-gradient(to bottom, transparent, var(--bg) 75%); }
+  .foot{ position:absolute; left:56px; right:56px; bottom:22px; display:flex; justify-content:space-between; font-size:18px; color:var(--muted); }
+  .foot .url{ color:var(--accent); font-family:'JetBrains Mono',monospace; font-size:17px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">KZ Bond<span>Monitor</span></div>
+  <div class="sub">Валютные облигации Казахстана на одном экране</div>
+  <div class="facts">
+    <div class="fact"><b>≈400</b><span>облигаций</span></div>
+    <div class="fact"><b>KASE + AIX</b><span>две биржи</span></div>
+    <div class="fact"><b>5</b><span>валют: USD, CNY, EUR, RUB, AED</span></div>
+  </div>
+  <table>
+    <thead><tr><th>Биржа</th><th>Тикер</th><th>Эмитент</th><th>Валюта</th><th class="r">Купон, %</th><th class="r">Погашение</th></tr></thead>
+    <tbody>
+      <tr><td><span class="exch kase">KASE</span></td><td class="num">KMGZe15</td><td class="issuer">Национальная компания "КазМунайГаз"</td><td>USD</td><td class="r num">6.375</td><td class="r num">2048-10-24</td></tr>
+      <tr><td><span class="exch aix">AIX</span></td><td class="num">MFKZ.1128</td><td class="issuer">MINISTRY OF FINANCE OF THE REPUBLIC OF KAZAKHSTAN</td><td>EUR</td><td class="r num">2.375</td><td class="r num">2028-11-09</td></tr>
+      <tr><td><span class="exch kase">KASE</span></td><td class="num">BRKZe21</td><td class="issuer">Банк Развития Казахстана</td><td>CNY</td><td class="r num">3.35</td><td class="r num">2028-09-01</td></tr>
+      <tr><td><span class="exch aix">AIX</span></td><td class="num">JET1.0828</td><td class="issuer">JET GROUP LTD</td><td>AED</td><td class="r num">10.00</td><td class="r num">2028-08-03</td></tr>
+      <tr><td><span class="exch aix">AIX</span></td><td class="num">KTZ22.1228</td><td class="issuer">National Company Kazakhstan Temir Zholy JSC</td><td>USD</td><td class="r num">5.50</td><td class="r num">2028-12-15</td></tr>
+    </tbody>
+  </table>
+</div>
+<div class="fade"></div>
+<div class="foot"><span>Цены, доходность к погашению и дюрация — на сайте</span><span class="url">kazbonds-monitor.msk1.amvera.tech</span></div>
+</body>
+</html>

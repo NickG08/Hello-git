@@ -157,3 +157,18 @@ def test_site_page_carries_the_coming_refresh_times_and_the_artifact_does_not():
     assert runs[0] == "2026-11-13T07:45:00Z"  # 12:45 Astana
     assert full.index("KZB_NEXT_RUNS") < full.index("</head>")
     assert "KZB_NEXT_RUNS = " not in site.render(_snapshot(), mode="artifact")
+
+
+def test_link_preview_tags_go_only_into_the_site_page(monkeypatch):
+    monkeypatch.setattr(site.config, "SITE_URL", "https://example.kz")
+    full = site.render(_snapshot(), mode="site")
+    fragment = site.render(_snapshot(), mode="artifact")
+    head = full[: full.index("</head>")]
+    assert '<meta property="og:site_name" content="KZ Bond Monitor">' in head
+    assert '<meta property="og:url" content="https://example.kz/">' in head
+    assert '<meta property="og:image" content="https://example.kz/static/og-image.png">' in head
+    assert '<meta name="twitter:card" content="summary_large_image">' in head
+    assert 'name="description"' in head
+    # The schedule is a few runs per trading day, not hourly.
+    assert "раз в час" not in full
+    assert "og:" not in fragment and 'name="description"' not in fragment

@@ -14,6 +14,7 @@ the data: the bonds of the latest run, the note, the run id and its time.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import logging
 import os
@@ -75,10 +76,25 @@ _DOCUMENT = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-{analytics_head}{head}</head>
+{share_head}{analytics_head}{head}</head>
 <body>
 {analytics_body}{body}</body>
 </html>
+"""
+
+# What a link to the site shows in Telegram, LinkedIn, Facebook and X. The
+# schedule is several runs per trading day (config.SCHEDULE_TIMES), not hourly.
+_SHARE_HEAD = """<meta name="description" content="Валютные облигации Казахстана на одном экране: ~400 бумаг бирж KASE и AIX, доходность к погашению, дюрация, сроки погашения. Данные обновляются несколько раз в течение торгового дня.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="KZ Bond Monitor">
+<meta property="og:title" content="KZ Bond Monitor — валютные облигации Казахстана">
+<meta property="og:description" content="~400 бумаг бирж KASE и AIX на одном экране: доходность к погашению, дюрация, сроки погашения. Обновление несколько раз в течение торгового дня.">
+<meta property="og:url" content="{url}">
+<meta property="og:image" content="{url}static/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="627">
+<meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
 """
 
 # Yandex Metrika counter: the code Metrika gives for the counter (as of
@@ -180,7 +196,9 @@ def render(df: pd.DataFrame, mode: str = "site", now: datetime | None = None) ->
     if not separator:
         raise ValueError("template has no </style> line to split head from body")
     counter = _metrika_id()
+    site_url = config.SITE_URL if config.SITE_URL.endswith("/") else config.SITE_URL + "/"
     return _DOCUMENT.format(
+        share_head=_SHARE_HEAD.format(url=html.escape(site_url, quote=True)),
         analytics_head=_next_runs_script(now) + (_METRIKA_HEAD.format(id=counter) if counter else ""),
         analytics_body=_METRIKA_BODY.format(id=counter) if counter else "",
         head=head + separator,
