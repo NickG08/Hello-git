@@ -319,11 +319,9 @@ function renderKpis(rows){
   const ex = kpiCounts('exchange').c;
   const exItem = v => `<span class="${kfCls('exchange',v)}" data-dim="exchange" data-val="${v}" role="button" tabindex="0">${v} ${ex[v]||0}</span>`;
   const mat = kpiCounts('mat').c;
-  const yrs = rows.filter(r=>!r.is_perpetual && r.days_to_maturity!==null && r.days_to_maturity!==undefined).map(r=>r.days_to_maturity/365.25).sort((a,b)=>a-b);
-  const medY = yrs.length ? (yrs.length%2 ? yrs[(yrs.length-1)/2] : (yrs[yrs.length/2-1]+yrs[yrs.length/2])/2) : null;
   const tickers = v => BONDS.filter(b=>matBucket(b)===v && filtered('mat').includes(b)).map(b=>b.ticker).join(', ');
   const extra = (v, text, tip) => (mat[v] || state.kpi.mat.has(v)) ? `<span class="nodate ${kfCls('mat',v)}" data-dim="mat" data-val="${v}" role="button" tabindex="0" title="${tip}: ${tickers(v)}">${text}: ${mat[v]||0}</span>` : null;
-  const matHint = [medY===null?null:`медиана ${medY.toFixed(1).replace('.',',')} г.`,
+  const matHint = [
     extra('без даты','дата погашения не опубликована','KASE пока не опубликовала дату погашения'),
     extra('бессрочные','бессрочные','Бессрочные (дата погашения у биржи условная)')].filter(Boolean).join('<br>');
   const issuers = new Set(rows.map(r=>r.issuer).filter(Boolean)).size;
