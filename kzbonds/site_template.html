@@ -412,12 +412,16 @@ function maturityText(b){
 }
 function tsRow(k,v){ return `<div class="ts-row"><span class="k">${k}</span><span class="v">${v}</span></div>`; }
 const YTM_MAX_DEAL_AGE_DAYS = 30;
+const YTM_MIN_DAYS_TO_MATURITY = 30;  // config.YTM_MIN_DAYS_TO_MATURITY
 function ytmNote(b){
   if(b.ytm!==null || b.clean_price===null) return '';
   let why = null;
   if(!b.last_trade_date) why = 'сделок по бумаге не было';
   else if(b.price_age_days > YTM_MAX_DEAL_AGE_DAYS) why = `последняя сделка более ${YTM_MAX_DEAL_AGE_DAYS} дней назад`;
-  return why ? `<div class="ts-note">YTM и дюрация не показаны: ${why}.</div>` : '';
+  if(why) return `<div class="ts-note">YTM и дюрация не показаны: ${why}.</div>`;
+  if(b.days_to_maturity!==null && b.days_to_maturity < YTM_MIN_DAYS_TO_MATURITY)
+    return `<div class="ts-note">YTM не показан: до погашения меньше ${YTM_MIN_DAYS_TO_MATURITY} дней, и пересчёт доходности на год её сильно искажает.</div>`;
+  return '';
 }
 // KASE quotes international bonds per 1 unit of debt; the lot says how many units trade at once.
 function lotNote(b){ return (Number(b.face_value)===1 && b.lot_size) ? ` (лот ${fmtInt(Number(b.lot_size))})` : ''; }

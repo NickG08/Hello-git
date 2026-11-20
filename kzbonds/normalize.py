@@ -14,6 +14,8 @@ price_quality values, worst first (first match on a bond's flags wins):
   STALE_PRICE    - the price is from a deal older than config.YTM_MAX_PRICE_AGE_DAYS, or the
                    bond never traded and the price is only the exchange's reference price;
                    YTM and duration are not shown (the raw figure is kept in `ytm_calc`).
+                   Separately, YTM alone is hidden within config.YTM_MIN_DAYS_TO_MATURITY
+                   of maturity, whatever the quality.
   CAPITALIZING   - coupon capitalizes into principal; our YTM math doesn't model that.
   FLOATING       - floating-rate coupon with unknown current rate.
   STALE_OR_ESTIMATED - price/coupon came from a fallback (HTML scrape, cached
@@ -184,6 +186,9 @@ def _apply_price_freshness(df: pd.DataFrame, flags_col: pd.Series, as_of=None) -
     stale = has_price & (df["price_age_days"] > config.YTM_MAX_PRICE_AGE_DAYS)
     for col in ("ytm", "macaulay_duration", "modified_duration"):
         df[col] = df[col].astype(object).where(~(never_traded | stale), None)
+    # Too close to maturity: the annualised yield says nothing (see config).
+    days_left = pd.to_numeric(df.get("days_to_maturity"), errors="coerce")
+    df["ytm"] = df["ytm"].astype(object).where(~(days_left < config.YTM_MIN_DAYS_TO_MATURITY), None)
     return pd.Series(
         [
             list(flags) + (["never_traded"] if nt else ["price_stale"] if st else [])

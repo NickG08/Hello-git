@@ -124,3 +124,15 @@ def test_ytm_hidden_for_a_bond_that_never_traded():
 def test_bond_without_a_price_stays_no_price():
     row = _fresh(clean_price=None, ytm=None, last_trade_date=None, _quality_flags=["no_price"])
     assert row["price_quality"] == "NO_PRICE"
+
+
+def test_ytm_hidden_close_to_maturity_but_duration_kept():
+    # ASKQb1 on 19.11.2026: a deal at 94, twelve days before redemption, annualised to 308%.
+    row = _fresh(last_trade_date="2026-11-10", days_to_maturity=12, ytm=308.28, modified_duration=0.03)
+    assert pd.isna(row["ytm"]) and row["ytm_calc"] == 308.28
+    assert row["modified_duration"] == 0.03
+
+
+def test_ytm_shown_from_thirty_days_to_maturity():
+    row = _fresh(last_trade_date="2026-11-10", days_to_maturity=30)
+    assert row["ytm"] == 6.2

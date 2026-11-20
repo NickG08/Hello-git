@@ -43,6 +43,11 @@ YTM_MAX_PRICE_AGE_DAYS = int(os.getenv("KZBONDS_YTM_MAX_PRICE_AGE_DAYS", "30"))
 # tens of percent that nobody can actually earn. The table still shows them.
 NOTE_MIN_DAYS_TO_MATURITY = int(os.getenv("KZBONDS_NOTE_MIN_DAYS_TO_MATURITY", "90"))
 
+# The page hides the yield of a bond closer to maturity than this. Annualising
+# a few days blows small price moves up: ASKQb1 traded at 94 twelve days
+# before redemption (19.11.2026) and showed 308%. Duration stays, it is right.
+YTM_MIN_DAYS_TO_MATURITY = int(os.getenv("KZBONDS_YTM_MIN_DAYS_TO_MATURITY", "30"))
+
 ANALYSIS_NOTE_PATH = DATA_DIR / "latest_note.md"
 
 # When kzbonds.scheduler refreshes the data: these times, Monday to Friday,
